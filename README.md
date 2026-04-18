@@ -1,64 +1,82 @@
+<div align="center">
+
 # CodeArenaAI Battles
 
-[![YouTube — CodeArenaAI](https://img.shields.io/badge/YouTube-@CodeArenaAI-FF0000?style=flat&logo=youtube&logoColor=white)](https://www.youtube.com/@CodeArenaAI)
+**Same prompt · Multiple AIs · You pick the winner**
 
-**Same prompt. Multiple AIs. One winner.**
+[![YouTube — CodeArenaAI](https://img.shields.io/badge/Watch-CodeArenaAI-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/@CodeArenaAI)
 
-[CodeArenaAI](https://www.youtube.com/@CodeArenaAI) is where AI tools compete under identical instructions. We line up models such as ChatGPT, Claude, Gemini, and DeepSeek (plus others as episodes evolve) on coding challenges, canvas animations, mini-games, and more. You watch the outputs side by side and pick what deserves the crown.
+*Where AI tools fight for supremacy.*
 
-## What this repository contains
+<br>
 
-This is a **static archive of battle outputs**: self-contained HTML files and the **exact prompt** used for each round. There is no build step, no framework, and no backend—only files you can open in a browser.
-
-| Item | Description |
-|------|-------------|
-| **Battle folders** | `battle-001-…` onward—one folder per battle, with a zero-padded index and a short slug (for example `battle-004-matrix-rain`). The export script rebuilds this list whenever you run it. |
-| **Model outputs** | Four files per folder, always the same names: `chatgpt.html`, `claude.html`, `gemini.html`, `deepseek.html`. Each file is that model’s self-contained answer to the prompt (plain static HTML you can open in a browser). |
-| **`prompt.md`** | **Only** the battle title and the **exact shared prompt** text. No wiring tables, no internal paths, no recording or sync notes. |
-
-### What this archive does not include
-
-Nothing here explains **how** CodeArenaAI produces or records episodes: no multi-panel app, no synchronized start, no preset formats, no iframe loader, no project layout from the private tooling repo. **Each folder is only:** `prompt.md` + the four HTML outputs. When you add or change battles in the recorder project, re-run the export so this tree stays a clean mirror of prompts and code only.
-
-## How to view a battle locally
-
-Browsers sometimes restrict `file://` for scripts or assets. A tiny local server is the most reliable approach:
-
-```bash
-# From the root of this repository (where this README lives)
-python3 -m http.server 8080
-```
-
-Then open a URL such as:
-
-`http://localhost:8080/battle-004-matrix-rain/chatgpt.html`
-
-Repeat with `claude.html`, `gemini.html`, or `deepseek.html` in the same folder to compare outputs.
-
-Alternatives: any static file server (for example `npx serve`) works the same way.
-
-## For CodeArenaAI maintainers
-
-Releases of this dataset are produced so that **only** prompts and per-model HTML appear here—never recorder apps, sync behavior, preset definitions, or internal file layout. When battles change upstream, refresh this tree the same way; the export tooling lives in the private recorder project and is intentionally not part of this public mirror.
-
-## Series on the channel
-
-- **Code Wars** — AI vs AI visual coding challenges  
-- **Agent Wars** — Claude Code vs Cursor vs Codex vs Gemini CLI  
-- **Automation Wars** — n8n vs Make vs Zapier  
-- **Prompt Wars** — Algorithm and logic showdowns  
-
-Tagline we live by: *Where AI tools fight for supremacy.*
-
-## Contributing and reuse
-
-These files are published for **education, comparison, and entertainment**. If you fork or share them, keep attribution to **CodeArenaAI** and link back to the channel when it makes sense. Suggestions for future battles belong in the YouTube community around the channel rather than as unsolicited bulk PRs of new HTML here—unless you are explicitly collaborating with the project maintainers.
-
-## Stay connected
-
-- **YouTube:** [youtube.com/@CodeArenaAI](https://www.youtube.com/@CodeArenaAI)  
-- Subscribe for new battles, same rules every time: **one prompt, many models, your verdict.**
+</div>
 
 ---
 
-*Repository: curated battle outputs for the CodeArenaAI series.*
+## Welcome
+
+[CodeArenaAI](https://www.youtube.com/@CodeArenaAI) is a YouTube series that pits leading AI assistants against each other on **the exact same brief**—coding challenges, canvas animations, mini-games, and more. This repository is the **open archive** of those duels: every battle’s **shared prompt** and each model’s **standalone HTML** answer, so you can read, run, and compare the results yourself.
+
+No install, no build, no database—just prompts and pages you can open in a browser.
+
+---
+
+## What you will find here
+
+Each folder is **one battle**, named with an index and a short slug (for example `battle-004-matrix-rain/`). Inside you always get:
+
+| File | What it is |
+|------|----------------|
+| **`prompt.md`** | The battle title and the **full prompt** every entry answered—the same brief, in full. |
+| **`chatgpt.html`** | A complete, self-contained HTML page—one competitor’s answer. |
+| **`claude.html`** | Another full HTML answer to the **identical** prompt. |
+| **`gemini.html`** | A third answer—same challenge, different implementation. |
+| **`deepseek.html`** | The fourth answer—same rules, new code. |
+
+The four `.html` names are fixed on purpose: easy links, easy diffs, and a simple story—**one prompt, four solutions**—whether you are browsing on GitHub or opening files locally.
+
+---
+
+## Try a battle in thirty seconds
+
+From the **root of this repository** (the folder that contains this `README.md`), start a tiny local server:
+
+```bash
+python3 -m http.server 8080
+```
+
+Then open something like:
+
+**http://localhost:8080/battle-004-matrix-rain/chatgpt.html**
+
+Open the other three HTML files from the **same** folder in new tabs—same prompt, four interpretations. If you prefer another static server (for example `npx serve`), that works too.
+
+> **Tip:** A local server avoids quirks some browsers have with `file://` and scripts or canvas-heavy demos.
+
+---
+
+## On the channel
+
+CodeArenaAI is more than one format. On YouTube you will find:
+
+- **Code Wars** — AI vs AI visual coding challenges  
+- **Agent Wars** — CLI and agent tooling face-offs  
+- **Automation Wars** — workflow and automation stacks compared  
+- **Prompt Wars** — logic, algorithms, and problem-solving under pressure  
+
+Subscribe for new drops, same rule every time: **one prompt, many models, your verdict.**
+
+---
+
+## Share and credit
+
+These materials are here for **learning, comparison, and fun**. If you use them in a video, article, or classroom, a nod to **CodeArenaAI** and a link to [youtube.com/@CodeArenaAI](https://www.youtube.com/@CodeArenaAI) is appreciated.
+
+---
+
+<div align="center">
+
+**[Subscribe on YouTube](https://www.youtube.com/@CodeArenaAI)** · *May the best model win.*
+
+</div>
