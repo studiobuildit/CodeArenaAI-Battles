@@ -71,7 +71,10 @@ Subscribe for new drops, same rule every time: **one prompt, many models, your v
 
 ## Share and credit
 
-These materials are here for **learning, comparison, and fun**. If you use them in a video, article, or classroom, a nod to **CodeArenaAI** and a link to [youtube.com/@CodeArenaAI](https://www.youtube.com/@CodeArenaAI) is appreciated.
+These materials are provided for learning, comparison, and entertainment.
+You’re welcome to explore, remix, and reference them in videos, articles, streams, or classrooms.
+If you use this work publicly, credit to **CodeArenaAI** and a link to [youtube.com/@CodeArenaAI](https://www.youtube.com/@CodeArenaAI) is greatly appreciated.
+
 
 ---
 
