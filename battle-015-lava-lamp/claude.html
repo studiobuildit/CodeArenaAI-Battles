@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lava Lamp Animation</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+            image-rendering: pixelated;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+        const blobCount = 12;
+        const IW = W / 4;
+        const IH = H / 4;
+        const blobs = [];
+
+        const colorPalette = (sum) => {
+            if (sum > 0.8) {
+                return `rgb(255, 230, 0)`;
+            } else if (sum > 0.6) {
+                const red = 255;
+                const green = Math.max(0, 200 * ((sum - 0.6) / 0.2));
+                return `rgb(${red}, ${green}, 0)`;
+            } else if (sum > 0.4) {
+                const red = 255;
+                const green = Math.max(0, 100 * ((sum - 0.4) / 0.2));
+                return `rgb(${red}, ${green}, 0)`;
+            } else if (sum > 0.3) {
+                return `rgb(200, 0, 0)`;
+            } else {
+                return null;
+            }
+        };
+
+        class Blob {
+            constructor(x, y, r, vx, vy, baseR, cyclePhase) {
+                this.x = x;
+                this.y = y;
+                this.r = r;
+                this.vx = vx;
+                this.vy = vy;
+                this.baseR = baseR;
+                this.cyclePhase = cyclePhase;
+            }
+
+            update() {
+                this.y += this.vy;
+                this.x += this.vx;
+
+                if (this.y < -this.r) {
+                    this.y = IH + this.r;
+                    this.cycle();
+                } else if (this.y > IH + this.r) {
+                    this.y = -this.r;
+                    this.cycle();
+                }
+
+                if (this.x < 10 || this.x > IW - 10) this.vx *= -1;
+
+                const throbbingFrequency = 0.005;
+                const throbbingAmplitude = this.baseR * 0.15;
+                this.r = this.baseR + Math.sin(performance.now() * throbbingFrequency + this.cyclePhase) * throbbingAmplitude;
+            }
+
+            cycle() {
+                this.vy = (Math.random() * 0.15 + 0.1) * (Math.random() > 0.5 ? 1 : -1);
+                this.vx = (Math.random() - 0.5) * 0.1;
+                this.baseR = (Math.random() * 15 + 15);
+            }
+        }
+
+        function init() {
+            blobs.length = 0;
+            for (let i = 0; i < blobCount; i++) {
+                const baseR = (Math.random() * 15 + 15);
+                blobs.push(new Blob(
+                    Math.random() * (IW / 2) + IW / 4,
+                    Math.random() * IH,
+                    baseR,
+                    (Math.random() - 0.5) * 0.1,
+                    (Math.random() * 0.15 + 0.1) * (Math.random() > 0.5 ? 1 : -1),
+                    baseR,
+                    Math.random() * Math.PI * 2
+                ));
+            }
+        }
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+            canvas.width = vpw * dpr;
+            canvas.height = vph * dpr;
+            ctx.setTransform( (vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+        }
+
+        function drawLavaLamp() {
+            blobs.forEach(b => b.update());
+
+            const pixelWidth = IW;
+            const pixelHeight = IH;
+            const gridRes = 2;
+            const imgData = ctx.createImageData(pixelWidth, pixelHeight);
+            const data = imgData.data;
+
+            for (let y = 0; y < pixelHeight; y+=gridRes) {
+                for (let x = 0; x < pixelWidth; x+=gridRes) {
+                    let sum = 0;
+                    for (let i = 0; i < blobCount; i++) {
+                        const b = blobs[i];
+                        const dx = x - b.x;
+                        const dy = y - b.y;
+                        const distSq = dx * dx + dy * dy;
+                        sum += (b.r * b.r) / distSq;
+                    }
+
+                    if (sum > 0.3) {
+                        const col = colorPalette(sum);
+                        if (col) {
+                            for (let gy = 0; gy < gridRes; gy++) {
+                                for (let gx = 0; gx < gridRes; gx++) {
+                                    const index = ((y + gy) * pixelWidth + (x + gx)) * 4;
+                                    const parts = col.match(/\d+/g);
+                                    data[index] = parseInt(parts[0]);
+                                    data[index + 1] = parseInt(parts[1]);
+                                    data[index + 2] = 0;
+                                    data[index + 3] = 255;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.shadowBlur = 40;
+            ctx.shadowColor = `rgba(255, 100, 0, 0.6)`;
+
+            ctx.strokeStyle = `rgba(255, 150, 150, 0.15)`;
+            ctx.lineWidth = 15;
+            ctx.beginPath();
+            ctx.moveTo(W * 0.15, H * 0.1);
+            ctx.lineTo(W * 0.15, H * 0.8);
+            ctx.lineTo(W * 0.85, H * 0.8);
+            ctx.lineTo(W * 0.85, H * 0.1);
+            ctx.stroke();
+
+            const tempCanvas = document.createElement('canvas');
+            const tCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = pixelWidth;
+            tempCanvas.height = pixelHeight;
+            tCtx.putImageData(imgData, 0, 0);
+
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(tempCanvas, W * 0.15, H * 0.1, W * 0.7, H * 0.7);
+
+            ctx.shadowBlur = 0;
+            ctx.shadowColor = 'transparent';
+
+            ctx.fillStyle = '#111';
+            ctx.fillRect(W * 0.1, H * 0.78, W * 0.8, H * 0.15);
+            ctx.fillRect(W * 0.2, H * 0.05, W * 0.6, H * 0.06);
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.fillRect(W * 0.25, H * 0.15, 20, H * 0.6);
+            ctx.fillRect(W * 0.7, H * 0.15, 8, H * 0.6);
+        }
+
+        function animate(timestamp) {
+            drawLavaLamp();
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', resize);
+
+        init();
+        resize();
+        requestAnimationFrame(animate);
+
+    </script>
+</body>
+</html>

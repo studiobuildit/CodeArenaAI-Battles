@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Ocean Waves | Layered Depth & Foam</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #02040c; min-height: 100vh; width: 100vw; overflow: hidden; display: flex; justify-content: center; align-items: center; }
+        canvas { display: block; margin: 0 auto; width: 100vw; height: 100vh; border-radius: 28px; box-shadow: 0 20px 35px rgba(0,0,0,0.5), 0 0 0 2px #1a3a5a; }
+    </style>
+</head>
+<body>
+<canvas id="oceanCanvas"></canvas>
+
+<script>
+(function(){
+  const canvas = document.getElementById('oceanCanvas');
+  const ctx = canvas.getContext('2d');
+
+  const W = 1100, H = 650;
+  let vpw = Math.max(1, window.innerWidth), vph = Math.max(1, window.innerHeight), dpr = 1;
+  function syncViewport() {
+    dpr = Math.max(1, window.devicePixelRatio || 1);
+    vpw = Math.max(1, window.innerWidth);
+    vph = Math.max(1, window.innerHeight);
+    canvas.width = Math.floor(vpw * dpr);
+    canvas.height = Math.floor(vph * dpr);
+  }
+  function beginFrame() {
+    syncViewport();
+    ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+  }
+
+  let time = 0;
+  const layers = [
+    { amp: 18, freq: 0.008, speed: 0.012, yOffset: 30, colorTop: '#0a4c6e', colorBottom: '#063a55', foam: 0.4 },
+    { amp: 14, freq: 0.014, speed: 0.018, yOffset: 55, colorTop: '#0f5c7a', colorBottom: '#0a4560', foam: 0.55 },
+    { amp: 22, freq: 0.005, speed: 0.008, yOffset: 80, colorTop: '#166e8c', colorBottom: '#0e5570', foam: 0.35 },
+    { amp: 12, freq: 0.02, speed: 0.025, yOffset: 110, colorTop: '#1a7f9e', colorBottom: '#126380', foam: 0.6 },
+    { amp: 26, freq: 0.0035, speed: 0.005, yOffset: 140, colorTop: '#2590af', colorBottom: '#1a728f', foam: 0.3 },
+    { amp: 16, freq: 0.01, speed: 0.015, yOffset: 175, colorTop: '#30a2c4', colorBottom: '#2385a5', foam: 0.7 }
+  ];
+
+  function drawSky() {
+    const gradSky = ctx.createLinearGradient(0, 0, 0, H * 0.55);
+    gradSky.addColorStop(0, '#1a1a3a');
+    gradSky.addColorStop(0.3, '#3a2a4a');
+    gradSky.addColorStop(0.6, '#c06a4a');
+    gradSky.addColorStop(0.85, '#e8a65a');
+    gradSky.addColorStop(1, '#f5cf8a');
+    ctx.fillStyle = gradSky;
+    ctx.fillRect(0, 0, W, H * 0.6);
+
+    ctx.beginPath();
+    ctx.arc(W - 110, H * 0.22, 52, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 210, 120, 0.25)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(W - 110, H * 0.22, 38, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 200, 100, 0.4)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(W - 110, H * 0.22, 24, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 180, 70, 0.6)';
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(230, 180, 130, 0.2)';
+    ctx.filter = 'blur(8px)';
+    for (let i = 0; i < 12; i++) {
+      ctx.beginPath();
+      ctx.ellipse(80 + i * 130 + Math.sin(time * 0.1 + i) * 20, 70 + Math.sin(i) * 25, 60, 35, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.filter = 'none';
+  }
+
+  function drawWaveLayer(layer, t) {
+    const yBase = H - layer.yOffset;
+    const amp = layer.amp;
+    const freq = layer.freq;
+    const speed = layer.speed;
+
+    ctx.beginPath();
+    let xStart = 0;
+    let yStart = yBase + Math.sin(xStart * freq + t * speed) * amp;
+    ctx.moveTo(xStart, yStart);
+
+    for (let x = 0; x <= W; x += 12) {
+      let y = yBase + Math.sin(x * freq + t * speed) * amp;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+
+    const grad = ctx.createLinearGradient(0, yBase - amp - 10, 0, yBase + amp + 20);
+    grad.addColorStop(0, layer.colorTop);
+    grad.addColorStop(0.7, layer.colorBottom);
+    grad.addColorStop(1, '#022a3a');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    const foamIntensity = layer.foam;
+    for (let x = 0; x < W; x += 15) {
+      let yWave = yBase + Math.sin(x * freq + t * speed) * amp;
+      let crestFactor = (Math.sin(x * freq + t * speed) + 1) / 2;
+      if (crestFactor > 0.65) {
+        let foamAlpha = (crestFactor - 0.6) * 0.7 * foamIntensity;
+        ctx.beginPath();
+        ctx.ellipse(x + (Math.sin(x * 0.05 + t) * 3), yWave - 2, 7, 3 + Math.sin(x * 0.2 + t) * 1.5, 0, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 245, ${foamAlpha * 0.8})`;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(x - 3 + Math.sin(t) * 2, yWave - 1, 2 + Math.sin(x * 0.3) * 1, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 250, 230, ${foamAlpha * 0.6})`;
+        ctx.fill();
+      }
+    }
+  }
+
+  function drawSpecularHighlights(t) {
+    for (let i = 0; i < 180; i++) {
+      let x = (i * 19 + t * 35) % W;
+      let yOffset = H - 75 + Math.sin(x * 0.02 + t * 2) * 12;
+      ctx.beginPath();
+      ctx.arc(x, yOffset, 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 200, ${0.15 + Math.sin(x * 0.1 + t) * 0.1})`;
+      ctx.fill();
+    }
+  }
+
+  function drawDeepOcean() {
+    const grad = ctx.createLinearGradient(0, H * 0.5, 0, H);
+    grad.addColorStop(0, '#0a3550');
+    grad.addColorStop(0.7, '#022030');
+    grad.addColorStop(1, '#01121c');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, H * 0.45, W, H * 0.55);
+  }
+
+  function drawSunReflection(t) {
+    const sunX = W - 110;
+    for (let i = 0; i < 60; i++) {
+      let x = sunX - 50 + Math.sin(i * 0.7 + t * 5) * 40;
+      let y = H - 60 - i * 8 + Math.sin(t * 3 + i) * 8;
+      if (y > H - 130 && y < H - 30) {
+        ctx.beginPath();
+        ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 200, 100, ${0.2 + Math.sin(t * 8 + i) * 0.1})`;
+        ctx.fill();
+      }
+    }
+  }
+
+  let foamParticles = [];
+  const FOAM_COUNT = 140;
+
+  class FoamParticle {
+    constructor() { this.reset(); }
+    reset() {
+      this.x = Math.random() * W;
+      this.y = Math.random() * 120 + H - 150;
+      this.life = Math.random() * 0.8 + 0.2;
+      this.size = Math.random() * 2.5 + 1;
+      this.vx = (Math.random() - 0.5) * 0.3;
+      this.vy = -0.3 - Math.random() * 0.5;
+    }
+    update() {
+      this.x += this.vx;
+      this.y += this.vy;
+      this.life -= 0.008;
+      if (this.life <= 0.02 || this.y < H - 180 || this.x < -20 || this.x > W + 20) {
+        this.reset();
+        this.y = H - 50 + Math.random() * 90;
+        this.life = 0.9;
+      }
+    }
+    draw() {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 230, ${this.life * 0.5})`;
+      ctx.fill();
+    }
+  }
+
+  function initFoam() {
+    for (let i = 0; i < FOAM_COUNT; i++) {
+      foamParticles.push(new FoamParticle());
+    }
+  }
+
+  function drawForegroundWave(t) {
+    const yBase = H - 42;
+    const amp = 10;
+    const freq = 0.018;
+    const speed = 0.028;
+    ctx.beginPath();
+    ctx.moveTo(0, yBase);
+    for (let x = 0; x <= W; x += 8) {
+      let y = yBase + Math.sin(x * freq + t * speed) * amp;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.fillStyle = '#1f8fb5';
+    ctx.fill();
+
+    for (let x = 0; x < W; x += 12) {
+      let yWave = yBase + Math.sin(x * freq + t * speed) * amp;
+      let crestVal = (Math.sin(x * freq + t * speed) + 1) / 2;
+      if (crestVal > 0.75) {
+        ctx.beginPath();
+        ctx.ellipse(x, yWave - 1, 6, 2.5, 0, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 250, 210, 0.6)`;
+        ctx.fill();
+      }
+    }
+  }
+
+  let timeAcc = 0;
+
+  function animate() {
+    beginFrame();
+    time += 0.018;
+    timeAcc = time;
+
+    ctx.clearRect(0, 0, W, H);
+
+    drawSky();
+    drawDeepOcean();
+
+    for (let layer of layers) {
+      drawWaveLayer(layer, timeAcc);
+    }
+
+    drawForegroundWave(timeAcc);
+    drawSpecularHighlights(timeAcc);
+    drawSunReflection(timeAcc);
+
+    for (let f of foamParticles) {
+      f.update();
+      f.draw();
+    }
+
+    for (let i = 0; i < 90; i++) {
+      let x = (i * 27 + time * 25) % W;
+      let y = H - 80 + Math.sin(x * 0.04 + time * 3) * 18;
+      ctx.beginPath();
+      ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 200, 0.4)`;
+      ctx.fill();
+    }
+
+    requestAnimationFrame(animate);
+  }
+
+  initFoam();
+  syncViewport();
+  window.addEventListener('resize', syncViewport);
+  animate();
+})();
+</script>
+</body>
+</html>

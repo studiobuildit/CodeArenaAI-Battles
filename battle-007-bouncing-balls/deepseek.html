@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Bouncing Balls | Realistic Physics & Collisions</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            background: #0a0c12;
+            min-height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            width: 100vw;
+            height: 100vh;
+            border-radius: 24px;
+            box-shadow: 0 0 0 2px #1a2a3a, 0 20px 35px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+<canvas id="bounceCanvas"></canvas>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('bounceCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 1000, H = 700;
+        let vpw = Math.max(1, window.innerWidth);
+        let vph = Math.max(1, window.innerHeight);
+        let dpr = 1;
+
+        function syncViewport() {
+            dpr = Math.max(1, window.devicePixelRatio || 1);
+            vpw = Math.max(1, window.innerWidth);
+            vph = Math.max(1, window.innerHeight);
+            canvas.width = Math.floor(vpw * dpr);
+            canvas.height = Math.floor(vph * dpr);
+        }
+
+        function beginFrame() {
+            syncViewport();
+            ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+        }
+
+        const GRAVITY = 0.22;
+        const BOUNCE_DAMPING = 0.92;
+        const COLLISION_DAMPING = 0.88;
+        const MIN_RADIUS = 8;
+        const MAX_RADIUS = 26;
+
+        class Ball {
+            constructor(x, y, vx, vy, radius, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.radius = radius;
+                this.color = color;
+                this.mass = radius * radius;
+            }
+
+            update() {
+                this.vy += GRAVITY;
+
+                this.vx *= 0.999;
+                this.vy *= 0.999;
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if (this.x - this.radius < 0) {
+                    this.x = this.radius;
+                    this.vx = -this.vx * BOUNCE_DAMPING;
+                }
+                if (this.x + this.radius > W) {
+                    this.x = W - this.radius;
+                    this.vx = -this.vx * BOUNCE_DAMPING;
+                }
+
+                if (this.y - this.radius < 0) {
+                    this.y = this.radius;
+                    this.vy = -this.vy * BOUNCE_DAMPING;
+                }
+                if (this.y + this.radius > H) {
+                    this.y = H - this.radius;
+                    this.vy = -this.vy * BOUNCE_DAMPING;
+                    this.vx *= 0.998;
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+
+                const grad = ctx.createRadialGradient(
+                    this.x - this.radius * 0.25,
+                    this.y - this.radius * 0.25,
+                    3,
+                    this.x,
+                    this.y,
+                    this.radius
+                );
+                grad.addColorStop(0, this.color);
+                grad.addColorStop(0.7, this.shadeColor(this.color, -30));
+                grad.addColorStop(1, this.shadeColor(this.color, -50));
+                ctx.fillStyle = grad;
+                ctx.fill();
+                ctx.shadowBlur = 6;
+                ctx.shadowColor = "rgba(0,0,0,0.3)";
+                ctx.strokeStyle = "rgba(255,255,255,0.25)";
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(this.x - this.radius * 0.2, this.y - this.radius * 0.2, this.radius * 0.2, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(255,255,240,0.35)";
+                ctx.fill();
+            }
+
+            shadeColor(col, percent) {
+                if (col.startsWith('hsl')) {
+                    return col;
+                }
+                return col;
+            }
+        }
+
+        function randomColor() {
+            const hue = Math.floor(Math.random() * 360);
+            const sat = 65 + Math.random() * 30;
+            const light = 55 + Math.random() * 25;
+            return `hsl(${hue}, ${sat}%, ${light}%)`;
+        }
+
+        function resolveCollision(b1, b2) {
+            const dx = b2.x - b1.x;
+            const dy = b2.y - b1.y;
+            const distance = Math.hypot(dx, dy);
+            const minDist = b1.radius + b2.radius;
+
+            if (distance < minDist && distance > 1e-6) {
+                const overlap = minDist - distance;
+                const angle = Math.atan2(dy, dx);
+                const moveX = Math.cos(angle) * overlap * 0.5;
+                const moveY = Math.sin(angle) * overlap * 0.5;
+                b1.x -= moveX;
+                b1.y -= moveY;
+                b2.x += moveX;
+                b2.y += moveY;
+
+                const nx = dx / distance;
+                const ny = dy / distance;
+                const vrelx = b2.vx - b1.vx;
+                const vrely = b2.vy - b1.vy;
+                const velAlong = vrelx * nx + vrely * ny;
+
+                if (velAlong < 0) {
+                    const e = COLLISION_DAMPING;
+                    const m1 = b1.mass;
+                    const m2 = b2.mass;
+                    const imp = (1 + e) * velAlong / (m1 + m2);
+                    b1.vx += imp * m2 * nx;
+                    b1.vy += imp * m2 * ny;
+                    b2.vx -= imp * m1 * nx;
+                    b2.vy -= imp * m1 * ny;
+                }
+            }
+        }
+
+        let balls = [];
+        const BALL_COUNT = 20;
+
+        function isOverlap(newBall, existingBalls) {
+            for (let b of existingBalls) {
+                const dx = b.x - newBall.x;
+                const dy = b.y - newBall.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist < b.radius + newBall.radius + 5) return true;
+            }
+            return false;
+        }
+
+        function initBalls() {
+            balls = [];
+            for (let i = 0; i < BALL_COUNT; i++) {
+                let radius = Math.floor(Math.random() * (MAX_RADIUS - MIN_RADIUS + 1) + MIN_RADIUS);
+                let overlap = true;
+                let attempts = 0;
+                let x, y;
+                while (overlap && attempts < 300) {
+                    x = Math.random() * (W - radius * 2) + radius;
+                    y = Math.random() * (H - radius * 2) + radius;
+                    const testBall = { x, y, radius };
+                    overlap = isOverlap(testBall, balls);
+                    attempts++;
+                }
+                let vx = (Math.random() - 0.5) * 5;
+                let vy = (Math.random() - 0.5) * 5;
+                let color = randomColor();
+                balls.push(new Ball(x, y, vx, vy, radius, color));
+            }
+        }
+
+        function updatePhysics() {
+            for (let ball of balls) {
+                ball.update();
+            }
+
+            for (let iter = 0; iter < 3; iter++) {
+                for (let i = 0; i < balls.length; i++) {
+                    for (let j = i + 1; j < balls.length; j++) {
+                        resolveCollision(balls[i], balls[j]);
+                    }
+                }
+            }
+        }
+
+        function drawBackground() {
+            const grad = ctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, "#0a0f1c");
+            grad.addColorStop(1, "#03050a");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.strokeStyle = "rgba(50, 100, 150, 0.08)";
+            ctx.lineWidth = 0.5;
+            for (let i = 0; i < W; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, H);
+                ctx.stroke();
+            }
+            for (let i = 0; i < H; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(W, i);
+                ctx.stroke();
+            }
+        }
+
+        function drawBalls() {
+            for (let ball of balls) {
+                ball.draw();
+            }
+            ctx.shadowBlur = 0;
+        }
+
+        function drawFloorGlow() {
+            for (let ball of balls) {
+                ctx.beginPath();
+                ctx.ellipse(ball.x, ball.y + ball.radius * 0.7, ball.radius * 0.9, ball.radius * 0.5, 0, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+                ctx.fill();
+            }
+        }
+
+        function animate() {
+            beginFrame();
+            updatePhysics();
+            drawBackground();
+            drawFloorGlow();
+            drawBalls();
+
+            requestAnimationFrame(animate);
+        }
+
+        initBalls();
+        canvas.addEventListener('click', () => {
+            for (let ball of balls) {
+                ball.vx = (Math.random() - 0.5) * 6;
+                ball.vy = (Math.random() - 0.5) * 6 - 1;
+                if (Math.abs(ball.vx) < 0.5) ball.vx += (Math.random() - 0.5) * 2;
+            }
+        });
+
+        window.addEventListener('resize', syncViewport);
+        animate();
+    })();
+</script>
+</body>
+</html>

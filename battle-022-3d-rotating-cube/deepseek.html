@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Wireframe Cube | 3D Neon Rotation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000000;
+            margin: 0;
+            padding: 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            background: #000000;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="cubeCanvas"></canvas>
+
+    <script>
+        (function() {
+            const LOGICAL_W = 540;
+            const LOGICAL_H = 960;
+            const CUBE_SIZE = 180;
+            
+            const vertices = [
+                {x: -CUBE_SIZE, y: -CUBE_SIZE, z: -CUBE_SIZE},
+                {x:  CUBE_SIZE, y: -CUBE_SIZE, z: -CUBE_SIZE},
+                {x:  CUBE_SIZE, y:  CUBE_SIZE, z: -CUBE_SIZE},
+                {x: -CUBE_SIZE, y:  CUBE_SIZE, z: -CUBE_SIZE},
+                {x: -CUBE_SIZE, y: -CUBE_SIZE, z:  CUBE_SIZE},
+                {x:  CUBE_SIZE, y: -CUBE_SIZE, z:  CUBE_SIZE},
+                {x:  CUBE_SIZE, y:  CUBE_SIZE, z:  CUBE_SIZE},
+                {x: -CUBE_SIZE, y:  CUBE_SIZE, z:  CUBE_SIZE}
+            ];
+            
+            const edges = [
+                [0, 1], [1, 2], [2, 3], [3, 0],
+                [4, 5], [5, 6], [6, 7], [7, 4],
+                [0, 4], [1, 5], [2, 6], [3, 7]
+            ];
+            
+            let angleX = 0;
+            let angleY = 0;
+            let angleZ = 0;
+            
+            const ROTATION_SPEED_X = 0.008;
+            const ROTATION_SPEED_Y = 0.012;
+            const ROTATION_SPEED_Z = 0.006;
+            
+            const centerX = LOGICAL_W / 2;
+            const centerY = LOGICAL_H / 2;
+            const CAMERA_DISTANCE = 550;
+            
+            function project3DTo2D(v, rotX, rotY, rotZ) {
+                let x = v.x;
+                let y = v.y;
+                let z = v.z;
+                
+                let cosZ = Math.cos(rotZ);
+                let sinZ = Math.sin(rotZ);
+                let x1 = x * cosZ - y * sinZ;
+                let y1 = x * sinZ + y * cosZ;
+                let z1 = z;
+                
+                let cosY = Math.cos(rotY);
+                let sinY = Math.sin(rotY);
+                let x2 = x1 * cosY + z1 * sinY;
+                let z2 = -x1 * sinY + z1 * cosY;
+                let y2 = y1;
+                
+                let cosX = Math.cos(rotX);
+                let sinX = Math.sin(rotX);
+                let y3 = y2 * cosX - z2 * sinX;
+                let z3 = y2 * sinX + z2 * cosX;
+                let x3 = x2;
+                
+                const scale = CAMERA_DISTANCE / (CAMERA_DISTANCE + z3);
+                const screenX = centerX + x3 * scale;
+                const screenY = centerY + y3 * scale;
+                
+                return {x: screenX, y: screenY, z: z3, scale: scale};
+            }
+            
+            let ctx = null;
+            let canvas = null;
+            let scaleX = 1, scaleY = 1;
+            let lastTimestamp = 0;
+            let accumulatedDelta = 0;
+            
+            function drawWireframeCube(rotX, rotY, rotZ, ctxLogical, timeMod) {
+                const projected = vertices.map(v => project3DTo2D(v, rotX, rotY, rotZ));
+                const edgesWithDepth = edges.map(edge => {
+                    const p1 = projected[edge[0]];
+                    const p2 = projected[edge[1]];
+                    const avgZ = (p1.z + p2.z) / 2;
+                    return { edge, avgZ, p1, p2 };
+                });
+                edgesWithDepth.sort((a, b) => b.avgZ - a.avgZ);
+                
+                ctxLogical.save();
+                ctxLogical.shadowBlur = 0;
+                
+                for (let layer = 0; layer < 3; layer++) {
+                    const thickness = 5 - layer * 1.5;
+                    const opacity = 0.12 - layer * 0.03;
+                    ctxLogical.beginPath();
+                    ctxLogical.lineWidth = thickness;
+                    ctxLogical.strokeStyle = `rgba(80, 255, 80, ${opacity})`;
+                    
+                    for (const item of edgesWithDepth) {
+                        ctxLogical.beginPath();
+                        ctxLogical.moveTo(item.p1.x, item.p1.y);
+                        ctxLogical.lineTo(item.p2.x, item.p2.y);
+                        ctxLogical.stroke();
+                    }
+                }
+                
+                ctxLogical.beginPath();
+                ctxLogical.lineWidth = 2.2;
+                ctxLogical.strokeStyle = "#44ff44";
+                for (const item of edgesWithDepth) {
+                    ctxLogical.beginPath();
+                    ctxLogical.moveTo(item.p1.x, item.p1.y);
+                    ctxLogical.lineTo(item.p2.x, item.p2.y);
+                    ctxLogical.stroke();
+                }
+                
+                ctxLogical.beginPath();
+                ctxLogical.lineWidth = 1.2;
+                ctxLogical.strokeStyle = "#ccff88";
+                for (const item of edgesWithDepth) {
+                    ctxLogical.beginPath();
+                    ctxLogical.moveTo(item.p1.x, item.p1.y);
+                    ctxLogical.lineTo(item.p2.x, item.p2.y);
+                    ctxLogical.stroke();
+                }
+                
+                ctxLogical.beginPath();
+                ctxLogical.lineWidth = 0.8;
+                ctxLogical.strokeStyle = "#ffffff";
+                for (const item of edgesWithDepth) {
+                    ctxLogical.beginPath();
+                    ctxLogical.moveTo(item.p1.x, item.p1.y);
+                    ctxLogical.lineTo(item.p2.x, item.p2.y);
+                    ctxLogical.stroke();
+                }
+                
+                for (let i = 0; i < projected.length; i++) {
+                    const p = projected[i];
+                    if (p.x > -50 && p.x < LOGICAL_W + 50 && p.y > -50 && p.y < LOGICAL_H + 50) {
+                        const glowSize = 3.5;
+                        ctxLogical.beginPath();
+                        ctxLogical.arc(p.x, p.y, glowSize, 0, Math.PI * 2);
+                        ctxLogical.fillStyle = "rgba(100, 255, 100, 0.35)";
+                        ctxLogical.fill();
+                        ctxLogical.beginPath();
+                        ctxLogical.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+                        ctxLogical.fillStyle = "#aaffaa";
+                        ctxLogical.fill();
+                        ctxLogical.beginPath();
+                        ctxLogical.arc(p.x, p.y, 0.8, 0, Math.PI * 2);
+                        ctxLogical.fillStyle = "#ffffff";
+                        ctxLogical.fill();
+                    }
+                }
+                
+                ctxLogical.beginPath();
+                ctxLogical.lineWidth = 0.6;
+                ctxLogical.strokeStyle = "rgba(150, 255, 150, 0.5)";
+                for (let i = 0; i < edgesWithDepth.length; i+=2) {
+                    const item = edgesWithDepth[i];
+                    if (item) {
+                        const mx = (item.p1.x + item.p2.x) / 2;
+                        const my = (item.p1.y + item.p2.y) / 2;
+                        const nextItem = edgesWithDepth[(i+1) % edgesWithDepth.length];
+                        if (nextItem) {
+                            const mx2 = (nextItem.p1.x + nextItem.p2.x) / 2;
+                            const my2 = (nextItem.p1.y + nextItem.p2.y) / 2;
+                            ctxLogical.beginPath();
+                            ctxLogical.moveTo(mx, my);
+                            ctxLogical.lineTo(mx2, my2);
+                            ctxLogical.stroke();
+                        }
+                    }
+                }
+                
+                ctxLogical.restore();
+            }
+            
+            function clearWithTrail(ctxLogical, alpha = 0.18) {
+                ctxLogical.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+                ctxLogical.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+                ctxLogical.fillStyle = "rgba(0, 5, 0, 0.05)";
+                ctxLogical.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+            }
+            
+            function addAtmosphere(ctxLogical, time) {
+                const gradient = ctxLogical.createRadialGradient(LOGICAL_W/2, LOGICAL_H/2, LOGICAL_H*0.3, LOGICAL_W/2, LOGICAL_H/2, LOGICAL_H*0.7);
+                gradient.addColorStop(0, "rgba(0, 0, 0, 0)");
+                gradient.addColorStop(1, "rgba(0, 8, 0, 0.35)");
+                ctxLogical.fillStyle = gradient;
+                ctxLogical.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+                
+                for (let i = 0; i < 60; i++) {
+                    const seed = (i * 13971) % 1000;
+                    const x = (Math.sin(time * 0.5 + seed) * 0.5 + 0.5) * LOGICAL_W;
+                    const y = (Math.cos(time * 0.3 + seed * 2) * 0.5 + 0.5) * LOGICAL_H;
+                    const size = 0.6 + Math.sin(time * 4 + seed) * 0.4;
+                    ctxLogical.beginPath();
+                    ctxLogical.arc(x, y, size, 0, Math.PI * 2);
+                    ctxLogical.fillStyle = `rgba(80, 255, 80, ${0.2 + Math.sin(time * 3 + seed) * 0.1})`;
+                    ctxLogical.fill();
+                }
+            }
+            
+            const canvasElem = document.getElementById('cubeCanvas');
+            const context = canvasElem.getContext('2d');
+            ctx = context;
+            canvas = canvasElem;
+            
+            let currentScaleX = 1, currentScaleY = 1;
+            
+            function resizeCanvasAndUpdate() {
+                const drawWidth = window.innerWidth;
+                const drawHeight = window.innerHeight;
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = drawWidth * dpr;
+                canvas.height = drawHeight * dpr;
+                canvas.style.width = `${drawWidth}px`;
+                canvas.style.height = `${drawHeight}px`;
+                currentScaleX = canvas.width / LOGICAL_W;
+                currentScaleY = canvas.height / LOGICAL_H;
+            }
+            
+            let lastFrameTime = null;
+            let animationTime = 0;
+            
+            function animate(nowMs) {
+                if (!lastFrameTime) {
+                    lastFrameTime = nowMs;
+                    requestAnimationFrame(animate);
+                    return;
+                }
+                
+                let delta = Math.min(0.033, (nowMs - lastFrameTime) / 1000);
+                if (delta <= 0) {
+                    lastFrameTime = nowMs;
+                    requestAnimationFrame(animate);
+                    return;
+                }
+                
+                angleX += ROTATION_SPEED_X * (delta * 60);
+                angleY += ROTATION_SPEED_Y * (delta * 60);
+                angleZ += ROTATION_SPEED_Z * (delta * 60);
+                
+                if (angleX > Math.PI * 2) angleX -= Math.PI * 2;
+                if (angleY > Math.PI * 2) angleY -= Math.PI * 2;
+                if (angleZ > Math.PI * 2) angleZ -= Math.PI * 2;
+                
+                animationTime += delta;
+                
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.fillStyle = "#000000";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.setTransform(currentScaleX, 0, 0, currentScaleY, 0, 0);
+                
+                clearWithTrail(ctx, 0.22);
+                drawWireframeCube(angleX, angleY, angleZ, ctx, animationTime);
+                addAtmosphere(ctx, animationTime);
+                
+                ctx.globalCompositeOperation = "overlay";
+                ctx.lineWidth = 0.5;
+                for (let i = 0; i < LOGICAL_H; i += 4) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, i);
+                    ctx.lineTo(LOGICAL_W, i);
+                    ctx.strokeStyle = `rgba(30, 255, 30, 0.05)`;
+                    ctx.stroke();
+                }
+                ctx.globalCompositeOperation = "source-over";
+                
+                const centerGlow = ctx.createRadialGradient(LOGICAL_W/2, LOGICAL_H/2, 80, LOGICAL_W/2, LOGICAL_H/2, 250);
+                centerGlow.addColorStop(0, "rgba(50, 255, 50, 0.08)");
+                centerGlow.addColorStop(1, "rgba(0, 0, 0, 0)");
+                ctx.fillStyle = centerGlow;
+                ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+                
+                lastFrameTime = nowMs;
+                requestAnimationFrame(animate);
+            }
+            
+            function handleResize() {
+                resizeCanvasAndUpdate();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.fillStyle = "#000000";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.setTransform(currentScaleX, 0, 0, currentScaleY, 0, 0);
+                drawWireframeCube(angleX, angleY, angleZ, ctx, animationTime);
+            }
+            
+            window.addEventListener('resize', () => {
+                handleResize();
+            });
+            window.addEventListener('orientationchange', () => {
+                setTimeout(handleResize, 30);
+            });
+            
+            resizeCanvasAndUpdate();
+            angleX = 0.4;
+            angleY = 0.7;
+            angleZ = 0.2;
+            lastFrameTime = null;
+            requestAnimationFrame(animate);
+        })();
+    </script>
+</body>
+</html>

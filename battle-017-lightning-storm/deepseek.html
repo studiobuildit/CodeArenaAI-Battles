@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Lightning Storm | Thunder & Rain</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: black;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: black;
+        }
+    </style>
+</head>
+<body>
+<canvas id="stormCanvas"></canvas>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('stormCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const W = 540;
+        const H = 960;
+        
+        let rainDrops = [];
+        let lightningStrikes = [];
+        let flashIntensity = 0;
+        let nextLightningTimer = 0;
+        let cloudThickness = 0.7;
+        
+        const RAIN_COUNT = 700;
+        let cloudLayers = [];
+        
+        class LightningBolt {
+            constructor(startX, startY, endX, endY) {
+                this.startX = startX;
+                this.startY = startY;
+                this.endX = endX;
+                this.endY = endY;
+                this.segments = [];
+                this.life = 1.0;
+                this.fadeSpeed = 0.12;
+                this.generateBolt();
+            }
+            
+            generateBolt() {
+                let points = [{x: this.startX, y: this.startY}];
+                let steps = Math.floor(12 + Math.random() * 12);
+                let dx = this.endX - this.startX;
+                let dy = this.endY - this.startY;
+                
+                for (let i = 1; i < steps; i++) {
+                    let t = i / steps;
+                    let baseX = this.startX + dx * t;
+                    let baseY = this.startY + dy * t;
+                    let perpX = -dy * 0.25;
+                    let perpY = dx * 0.25;
+                    let offset = (Math.random() - 0.5) * 28;
+                    let jitterX = (Math.random() - 0.5) * 18;
+                    let jitterY = (Math.random() - 0.5) * 18;
+                    let x = baseX + perpX * offset + jitterX;
+                    let y = baseY + perpY * offset + jitterY;
+                    points.push({x: x, y: y});
+                }
+                points.push({x: this.endX, y: this.endY});
+                this.segments = points;
+            }
+            
+            update() {
+                this.life -= this.fadeSpeed;
+                return this.life > 0;
+            }
+            
+            draw() {
+                if (this.segments.length < 2) return;
+                const alpha = Math.min(1, this.life * 1.2);
+                ctx.beginPath();
+                ctx.moveTo(this.segments[0].x, this.segments[0].y);
+                for (let i = 1; i < this.segments.length; i++) {
+                    ctx.lineTo(this.segments[i].x, this.segments[i].y);
+                }
+                ctx.strokeStyle = `rgba(220, 230, 255, ${alpha * 0.95})`;
+                ctx.lineWidth = 2.8;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = `rgba(180, 200, 255, ${alpha * 0.9})`;
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(this.segments[0].x, this.segments[0].y);
+                for (let i = 1; i < this.segments.length; i++) {
+                    ctx.lineTo(this.segments[i].x, this.segments[i].y);
+                }
+                ctx.strokeStyle = `rgba(255, 255, 240, ${alpha})`;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                
+                for (let i = 1; i < this.segments.length - 1; i++) {
+                    ctx.beginPath();
+                    ctx.arc(this.segments[i].x, this.segments[i].y, 2.5, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 230, 180, ${alpha * 0.7})`;
+                    ctx.fill();
+                }
+            }
+        }
+        
+        class RainDrop {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.x = Math.random() * W;
+                this.y = Math.random() * H;
+                this.length = 8 + Math.random() * 14;
+                this.speed = 3 + Math.random() * 7;
+                this.thickness = 1 + Math.random() * 2;
+                this.alpha = 0.2 + Math.random() * 0.4;
+            }
+            update() {
+                this.y += this.speed;
+                if (this.y > H + 20) {
+                    this.reset();
+                    this.y = -20;
+                }
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(this.x, this.y + this.length);
+                ctx.strokeStyle = `rgba(120, 160, 200, ${this.alpha * 0.6})`;
+                ctx.lineWidth = this.thickness;
+                ctx.stroke();
+            }
+        }
+        
+        class CloudLayer {
+            constructor(yOffset, widthFactor, density) {
+                this.yOffset = yOffset;
+                this.widthFactor = widthFactor;
+                this.density = density;
+                this.puffs = [];
+                for (let i = 0; i < 35; i++) {
+                    this.puffs.push({
+                        x: Math.random() * W,
+                        y: this.yOffset + Math.random() * 70,
+                        radius: 30 + Math.random() * 55,
+                        darkness: 0.3 + Math.random() * 0.4
+                    });
+                }
+            }
+            draw() {
+                for (let p of this.puffs) {
+                    ctx.beginPath();
+                    ctx.ellipse(p.x, p.y, p.radius, p.radius * 0.7, 0, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(15, 20, 35, ${0.65 + p.darkness * 0.3})`;
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.ellipse(p.x - 8, p.y - 5, p.radius * 0.6, p.radius * 0.4, 0, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(8, 12, 25, 0.7)`;
+                    ctx.fill();
+                }
+            }
+        }
+        
+        function initRain() {
+            rainDrops = [];
+            for (let i = 0; i < RAIN_COUNT; i++) rainDrops.push(new RainDrop());
+        }
+        
+        function initClouds() {
+            cloudLayers = [
+                new CloudLayer(H * 0.05, 1.2, 0.9),
+                new CloudLayer(H * 0.12, 1.1, 0.85),
+                new CloudLayer(H * 0.19, 1.0, 0.8),
+                new CloudLayer(H * 0.26, 0.9, 0.75)
+            ];
+        }
+        
+        function spawnLightning() {
+            const startX = 40 + Math.random() * (W - 80);
+            const startY = 40 + Math.random() * 120;
+            const endX = startX + (Math.random() - 0.5) * 70;
+            const endY = H - 30;
+            const bolt = new LightningBolt(startX, startY, endX, endY);
+            lightningStrikes.push(bolt);
+            flashIntensity = 0.85 + Math.random() * 0.3;
+            nextLightningTimer = 0.5 + Math.random() * 4.5;
+        }
+        
+        let timeSinceLastStrike = 0;
+        let lastTimestamp = 0;
+        
+        function updateStorm(deltaSec) {
+            for (let drop of rainDrops) drop.update();
+            
+            for (let i = 0; i < lightningStrikes.length; i++) {
+                let alive = lightningStrikes[i].update();
+                if (!alive) {
+                    lightningStrikes.splice(i, 1);
+                    i--;
+                }
+            }
+            
+            flashIntensity *= 0.94;
+            if (flashIntensity < 0.02) flashIntensity = 0;
+            
+            if (nextLightningTimer > 0) {
+                nextLightningTimer -= deltaSec;
+                if (nextLightningTimer <= 0) {
+                    spawnLightning();
+                    if (Math.random() < 0.25) {
+                        setTimeout(() => spawnLightning(), 80);
+                    }
+                }
+            } else if (lightningStrikes.length === 0 && Math.random() < 0.008) {
+                spawnLightning();
+            }
+        }
+        
+        function drawBackground() {
+            const grad = ctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, "#10121f");
+            grad.addColorStop(0.4, "#181e30");
+            grad.addColorStop(0.8, "#0a0e18");
+            grad.addColorStop(1, "#05070f");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        function drawRainMist() {
+            ctx.fillStyle = `rgba(70, 90, 120, ${0.08 + Math.random() * 0.04})`;
+            ctx.fillRect(0, H * 0.7, W, H * 0.3);
+        }
+        
+        function drawGround() {
+            ctx.fillStyle = "#0a0e16";
+            ctx.fillRect(0, H - 35, W, 45);
+            ctx.fillStyle = "#121826";
+            for (let i = 0; i < 25; i++) {
+                let x = i * 25;
+                let height = 12 + Math.sin(i * 0.5) * 8;
+                ctx.fillRect(x, H - 35 - height, 18, height);
+            }
+        }
+        
+        function drawCloudLighting() {
+            if (flashIntensity > 0.1) {
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.fillStyle = `rgba(180, 200, 255, ${flashIntensity * 0.2})`;
+                ctx.fillRect(0, 0, W, H * 0.4);
+                ctx.globalCompositeOperation = 'source-over';
+            }
+        }
+        
+        function drawScreenFlash() {
+            if (flashIntensity > 0.02) {
+                ctx.fillStyle = `rgba(210, 230, 255, ${flashIntensity * 0.35})`;
+                ctx.fillRect(0, 0, W, H);
+            }
+        }
+        
+        let shakeOffset = 0;
+        
+        function drawRain() {
+            for (let drop of rainDrops) drop.draw();
+        }
+        
+        function drawClouds() {
+            for (let layer of cloudLayers) layer.draw();
+            if (flashIntensity > 0.15) {
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.fillStyle = `rgba(140, 180, 240, ${flashIntensity * 0.2})`;
+                ctx.fillRect(0, 0, W, H * 0.35);
+                ctx.globalCompositeOperation = 'source-over';
+            }
+        }
+        
+        let mistParticles = [];
+        const MIST_COUNT = 120;
+        
+        class MistParticle {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.x = Math.random() * W;
+                this.y = H - 40 + Math.random() * 45;
+                this.size = 8 + Math.random() * 25;
+                this.alpha = 0.1 + Math.random() * 0.25;
+                this.vx = (Math.random() - 0.5) * 0.3;
+            }
+            update() {
+                this.x += this.vx;
+                if (this.x < -40) this.x = W + 40;
+                if (this.x > W + 40) this.x = -40;
+                this.alpha += (Math.random() - 0.5) * 0.02;
+                if (this.alpha < 0.05) this.alpha = 0.1;
+                if (this.alpha > 0.35) this.alpha = 0.3;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y, this.size, this.size * 0.5, 0, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(70, 90, 110, ${this.alpha * 0.5})`;
+                ctx.fill();
+            }
+        }
+        
+        function initMist() {
+            for (let i = 0; i < MIST_COUNT; i++) mistParticles.push(new MistParticle());
+        }
+        
+        let dpr = window.devicePixelRatio || 1;
+        let viewportW = window.innerWidth;
+        let viewportH = window.innerHeight;
+        
+        function resizeCanvas() {
+            viewportW = window.innerWidth;
+            viewportH = window.innerHeight;
+            canvas.width = viewportW * dpr;
+            canvas.height = viewportH * dpr;
+            canvas.style.width = `${viewportW}px`;
+            canvas.style.height = `${viewportH}px`;
+        }
+        
+        function applyTransform() {
+            const scaleX = (viewportW * dpr) / W;
+            const scaleY = (viewportH * dpr) / H;
+            ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        }
+        
+        let lastFrameTime = 0;
+        
+        function animate(currentTime) {
+            requestAnimationFrame(animate);
+            if (!lastFrameTime) {
+                lastFrameTime = currentTime;
+                return;
+            }
+            let delta = Math.min(0.033, (currentTime - lastFrameTime) / 1000);
+            if (delta < 0.005) {
+                lastFrameTime = currentTime;
+                return;
+            }
+            lastFrameTime = currentTime;
+            
+            updateStorm(delta);
+            for (let m of mistParticles) m.update();
+            
+            applyTransform();
+            
+            drawBackground();
+            drawClouds();
+            drawRainMist();
+            drawRain();
+            
+            for (let bolt of lightningStrikes) bolt.draw();
+            
+            drawCloudLighting();
+            drawGround();
+            for (let m of mistParticles) m.draw();
+            drawScreenFlash();
+            
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.shadowBlur = 0;
+        }
+        
+        window.addEventListener('resize', () => {
+            dpr = window.devicePixelRatio || 1;
+            resizeCanvas();
+            applyTransform();
+        });
+        
+        initRain();
+        initClouds();
+        initMist();
+        resizeCanvas();
+        applyTransform();
+        setTimeout(() => spawnLightning(), 300);
+        animate();
+    })();
+</script>
+</body>
+</html>

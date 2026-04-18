@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Elegant Ocean Waves</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { margin: 0; background: black; overflow: hidden; width: 100vw; height: 100vh; }
+  canvas { width: 100vw; height: 100vh; display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+const W = 400, H = 400;
+let t = 0;
+let vpw = Math.max(1, window.innerWidth), vph = Math.max(1, window.innerHeight), dpr = 1;
+function syncViewport() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  vpw = Math.max(1, window.innerWidth);
+  vph = Math.max(1, window.innerHeight);
+  canvas.width = Math.floor(vpw * dpr);
+  canvas.height = Math.floor(vph * dpr);
+}
+function beginFrame() {
+  syncViewport();
+  ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+}
+
+const waves = [
+  { amp: 12, freq: 0.02, speed: 0.6, y: 210, color: "#0a2540" },
+  { amp: 16, freq: 0.018, speed: 0.5, y: 230, color: "#113a5d" },
+  { amp: 20, freq: 0.016, speed: 0.4, y: 250, color: "#1b5e8a" },
+  { amp: 24, freq: 0.014, speed: 0.3, y: 270, color: "#2e8bc0" }
+];
+
+function drawSky() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#ff9966");
+  g.addColorStop(0.25, "#ff5e62");
+  g.addColorStop(0.5, "#3a7bd5");
+  g.addColorStop(1, "#0a2540");
+
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawWave(w) {
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+
+  for (let x = 0; x <= W; x++) {
+    const y = w.y + Math.sin(x * w.freq + t * w.speed) * w.amp;
+    ctx.lineTo(x, y);
+  }
+
+  ctx.lineTo(W, H);
+  ctx.closePath();
+
+  ctx.fillStyle = w.color;
+  ctx.fill();
+
+  ctx.beginPath();
+  for (let x = 0; x <= W; x++) {
+    const y = w.y + Math.sin(x * w.freq + t * w.speed) * w.amp;
+    if (x === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  ctx.lineWidth = 2;
+  ctx.shadowBlur = 8;
+  ctx.shadowColor = "rgba(255,255,255,0.4)";
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+function animate() {
+  beginFrame();
+  ctx.clearRect(0, 0, W, H);
+
+  drawSky();
+  waves.forEach(w => drawWave(w));
+
+  t += 0.02;
+  requestAnimationFrame(animate);
+}
+
+syncViewport();
+window.addEventListener("resize", syncViewport);
+animate();
+</script>
+</body>
+</html>

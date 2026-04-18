@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CRT AI Pong</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+        }
+        #crt-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.1) 50%
+            ), 
+            linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+            background-size: 100% 4px, 3px 100%;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="crt-overlay"></div>
+    <canvas id="pongCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('pongCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+        const BALL_START_SPEED = 6;
+        const SPEED_INC = 0.2;
+        const PADDLE_W = 15;
+        const PADDLE_H = 100;
+        const PADDLE_SPEED = 7;
+        const MARGIN = 40;
+
+        let ball = { x: W / 2, y: H / 2, dx: BALL_START_SPEED, dy: BALL_START_SPEED, size: 10 };
+        let p1 = { y: H / 2 - PADDLE_H / 2, score: 0 };
+        let p2 = { y: H / 2 - PADDLE_H / 2, score: 0 };
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+            
+            let displayW, displayH;
+            if (winW / winH > W / H) {
+                displayH = winH;
+                displayW = winH * (W / H);
+            } else {
+                displayW = winW;
+                displayH = winW * (H / winW);
+            }
+
+            canvas.width = winW * dpr;
+            canvas.height = winH * dpr;
+            canvas.style.width = winW + 'px';
+            canvas.style.height = winH + 'px';
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        function update() {
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+
+            const aiFollow = (paddle, targetY) => {
+                const center = paddle.y + PADDLE_H / 2;
+                if (center < targetY - 10) paddle.y += PADDLE_SPEED;
+                else if (center > targetY + 10) paddle.y -= PADDLE_SPEED;
+                
+                if (paddle.y < 0) paddle.y = 0;
+                if (paddle.y > H - PADDLE_H) paddle.y = H - PADDLE_H;
+            };
+
+            aiFollow(p1, ball.y);
+            aiFollow(p2, ball.y);
+
+            if (ball.y <= 0 || ball.y >= H) ball.dy *= -1;
+
+            if (ball.x <= MARGIN + PADDLE_W && ball.y > p1.y && ball.y < p1.y + PADDLE_H) {
+                ball.dx = Math.abs(ball.dx) + SPEED_INC;
+                ball.dy += (Math.random() - 0.5) * 2;
+            }
+
+            if (ball.x >= W - MARGIN - PADDLE_W && ball.y > p2.y && ball.y < p2.y + PADDLE_H) {
+                ball.dx = -Math.abs(ball.dx) - SPEED_INC;
+                ball.dy += (Math.random() - 0.5) * 2;
+            }
+
+            if (ball.x < 0) {
+                p2.score++;
+                resetBall();
+            } else if (ball.x > W) {
+                p1.score++;
+                resetBall();
+            }
+        }
+
+        function resetBall() {
+            ball.x = W / 2;
+            ball.y = H / 2;
+            ball.dx = (Math.random() > 0.5 ? 1 : -1) * BALL_START_SPEED;
+            ball.dy = (Math.random() - 0.5) * BALL_START_SPEED;
+        }
+
+        function draw() {
+            const dpr = window.devicePixelRatio || 1;
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+            
+            const scale = Math.min(winW / W, winH / H);
+            const offsetX = (winW - W * scale) / 2;
+            const offsetY = (winH - H * scale) / 2;
+
+            ctx.setTransform(scale * dpr, 0, 0, scale * dpr, offsetX * dpr, offsetY * dpr);
+
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00FF41';
+            ctx.fillStyle = '#00FF41';
+
+            ctx.setLineDash([10, 15]);
+            ctx.strokeStyle = 'rgba(0, 255, 65, 0.2)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(W / 2, 0);
+            ctx.lineTo(W / 2, H);
+            ctx.stroke();
+
+            ctx.fillRect(MARGIN, p1.y, PADDLE_W, PADDLE_H);
+            ctx.fillRect(W - MARGIN - PADDLE_W, p2.y, PADDLE_W, PADDLE_H);
+
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.size / 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.font = '700 60px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(p1.score, W * 0.25, 80);
+            ctx.fillText(p2.score, W * 0.75, 80);
+
+            if (Math.random() > 0.98) {
+                ctx.fillStyle = 'rgba(0, 255, 65, 0.05)';
+                ctx.fillRect(0, 0, W, H);
+            }
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        loop();
+    </script>
+</body>
+</html>

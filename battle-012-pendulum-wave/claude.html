@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pendulum Wave 540x960</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain; 
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+
+        const count = 15;
+        const cyclePeriod = 60;
+        const baseOscillations = 25;
+        const maxAmplitude = Math.PI / 3.5;
+        const topMargin = 80;
+        
+        let pendulums = [];
+
+        function initPendulums() {
+            pendulums = [];
+            for (let i = 0; i < count; i++) {
+                const oscillations = baseOscillations + i;
+                const frequency = oscillations / cyclePeriod;
+                const length = 150 + (i * 45); 
+
+                pendulums.push({
+                    length: length,
+                    freq: frequency,
+                    color: `hsl(${(i / count) * 360}, 80%, 60%)`,
+                    size: 14 - (i * 0.3)
+                });
+            }
+        }
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+
+            canvas.width = vpw * dpr;
+            canvas.height = vph * dpr;
+
+            const scale = Math.min(vpw / W, vph / H);
+            const offsetX = (vpw - W * scale) / 2 * dpr;
+            const offsetY = (vph - H * scale) / 2 * dpr;
+
+            ctx.setTransform(scale * dpr, 0, 0, scale * dpr, offsetX, offsetY);
+        }
+
+        function animate(timestamp) {
+            const t = timestamp / 1000;
+
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
+
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(W * 0.1, topMargin);
+            ctx.lineTo(W * 0.9, topMargin);
+            ctx.stroke();
+
+            pendulums.forEach((p, i) => {
+                const angle = maxAmplitude * Math.cos(2 * Math.PI * p.freq * t);
+                
+                const x0 = W / 2;
+                const y0 = topMargin;
+                const x1 = x0 + Math.sin(angle) * p.length;
+                const y1 = y0 + Math.cos(angle) * p.length;
+
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+                ctx.lineWidth = 2;
+                ctx.moveTo(x0, y0);
+                ctx.lineTo(x1, y1);
+                ctx.stroke();
+
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = p.color;
+                ctx.beginPath();
+                ctx.fillStyle = p.color;
+                ctx.arc(x1, y1, p.size, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.shadowBlur = 0;
+            });
+
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', resize);
+        initPendulums();
+        resize();
+        requestAnimationFrame(animate);
+    </script>
+</body>
+</html>

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D DNA Helix</title>
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #000;
+}
+canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const W = 540, H = 960;
+let dpr = window.devicePixelRatio || 1;
+let vpw = window.innerWidth;
+let vph = window.innerHeight;
+
+function resize() {
+    dpr = window.devicePixelRatio || 1;
+    vpw = window.innerWidth;
+    vph = window.innerHeight;
+    canvas.width = Math.floor(vpw * dpr);
+    canvas.height = Math.floor(vph * dpr);
+}
+
+window.addEventListener('resize', resize);
+resize();
+
+const CX = W / 2;
+const CY = H / 2;
+const helixHeight = 700;
+const basePairs = 40;
+const radius = 80;
+const verticalSpacing = 16;
+
+let rotation = 0;
+const rotationSpeed = 0.02;
+
+const baseColors = ['#00aaff', '#ff4444', '#ffaa00', '#aa44ff'];
+
+class HelixPoint {
+    constructor(index, isStrandB) {
+        this.index = index;
+        this.isStrandB = isStrandB;
+        this.y = (index - basePairs / 2) * verticalSpacing;
+        this.angleOffset = isStrandB ? Math.PI : 0;
+    }
+    
+    getPosition(rot) {
+        const angle = rot + this.angleOffset + (this.index * 0.3);
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+        return { x, y: this.y, z, angle };
+    }
+}
+
+const strandA = [];
+const strandB = [];
+
+for (let i = 0; i < basePairs; i++) {
+    strandA.push(new HelixPoint(i, false));
+    strandB.push(new HelixPoint(i, true));
+}
+
+function project(x, y, z) {
+    const fov = 400;
+    const distance = fov + z;
+    const scale = fov / distance;
+    return {
+        x: CX + x * scale,
+        y: CY + y * scale,
+        scale: scale,
+        z: z
+    };
+}
+
+function drawSphere(proj, color, size, glowColor) {
+    const r = size * proj.scale;
+    const alpha = 0.4 + (proj.z + radius) / (2 * radius) * 0.6;
+    
+    ctx.globalAlpha = alpha;
+    
+    const grad = ctx.createRadialGradient(
+        proj.x - r * 0.3, proj.y - r * 0.3, 0,
+        proj.x, proj.y, r
+    );
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(0.3, color);
+    grad.addColorStop(1, glowColor);
+    
+    ctx.fillStyle = grad;
+    ctx.shadowBlur = 15 * proj.scale;
+    ctx.shadowColor = glowColor;
+    ctx.beginPath();
+    ctx.arc(proj.x, proj.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+}
+
+function drawConnection(p1, p2, color) {
+    const alpha1 = 0.3 + (p1.z + radius) / (2 * radius) * 0.5;
+    const alpha2 = 0.3 + (p2.z + radius) / (2 * radius) * 0.5;
+    const alpha = (alpha1 + alpha2) / 2;
+    
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = color;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+}
+
+function animate() {
+    ctx.setTransform((vpw/W) * dpr, 0, 0, (vph/H) * dpr, 0, 0);
+    
+    ctx.fillStyle = '#050508';
+    ctx.fillRect(0, 0, W, H);
+    
+    rotation += rotationSpeed;
+    
+    const allPoints = [];
+    
+    for (let i = 0; i < basePairs; i++) {
+        const posA = strandA[i].getPosition(rotation);
+        const posB = strandB[i].getPosition(rotation);
+        
+        const projA = project(posA.x, posA.y, posA.z);
+        const projB = project(posB.x, posB.y, posB.z);
+        
+        const baseColor = baseColors[i % 4];
+        
+        allPoints.push({
+            proj: projA,
+            color: '#4488ff',
+            glow: '#0066ff',
+            size: 10,
+            z: posA.z,
+            type: 'sphere'
+        });
+        
+        allPoints.push({
+            proj: projB,
+            color: '#ff6644',
+            glow: '#ff2200',
+            size: 10,
+            z: posB.z,
+            type: 'sphere'
+        });
+        
+        allPoints.push({
+            p1: projA,
+            p2: projB,
+            color: baseColor,
+            z: (posA.z + posB.z) / 2,
+            type: 'rung'
+        });
+    }
+    
+    allPoints.sort((a, b) => a.z - b.z);
+    
+    allPoints.forEach(p => {
+        if (p.type === 'sphere') {
+            drawSphere(p.proj, p.color, p.size, p.glow);
+        } else {
+            drawConnection(p.p1, p.p2, p.color);
+        }
+    });
+    
+    const centerGlow = ctx.createRadialGradient(CX, CY, 0, CX, CY, 300);
+    centerGlow.addColorStop(0, 'rgba(100, 150, 255, 0.08)');
+    centerGlow.addColorStop(0.5, 'rgba(50, 80, 150, 0.04)');
+    centerGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = centerGlow;
+    ctx.fillRect(0, 0, W, H);
+    
+    requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>

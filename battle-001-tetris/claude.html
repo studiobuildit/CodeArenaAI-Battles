@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetris Satisfaction Loop</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a12; }
+      canvas { display: block; width: 100%; height: 100%; }
+    </style>
+    </head>
+    <body>
+    <canvas id="c"></canvas>
+    <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    
+    let W, H, CELL, COLS, ROWS, BOARD_X, BOARD_Y, BOARD_W, BOARD_H;
+    const GRID_COLS = 10;
+    const GRID_ROWS = 20;
+    
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      W = window.innerWidth;
+      H = window.innerHeight;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    
+      CELL = Math.floor(Math.min(W / 14, H / 24));
+      BOARD_W = CELL * GRID_COLS;
+      BOARD_H = CELL * GRID_ROWS;
+      BOARD_X = Math.floor((W - BOARD_W) / 2);
+      BOARD_Y = Math.floor((H - BOARD_H) / 2);
+    }
+    resize();
+    window.addEventListener('resize', resize);
+    
+    // Tetris colors — vivid neon palette
+    const COLORS = {
+      I: '#00f5ff', // cyan
+      O: '#ffe033', // yellow
+      T: '#c840ff', // purple
+      S: '#39ff14', // green
+      Z: '#ff3131', // red
+      J: '#3b82f6', // blue
+      L: '#ff8c00', // orange
+    };
+    
+    const SHAPES = {
+      I: [[0,0],[1,0],[2,0],[3,0]],
+      O: [[0,0],[1,0],[0,1],[1,1]],
+      T: [[0,0],[1,0],[2,0],[1,1]],
+      S: [[1,0],[2,0],[0,1],[1,1]],
+      Z: [[0,0],[1,0],[1,1],[2,1]],
+      J: [[0,0],[0,1],[1,1],[2,1]],
+      L: [[2,0],[0,1],[1,1],[2,1]],
+    };
+    
+    // Grid state: null = empty, string = color
+    let grid = Array.from({length: GRID_ROWS}, () => Array(GRID_COLS).fill(null));
+    
+    // Particle system for line clears
+    let particles = [];
+    
+    // Choreographed sequence of pieces that perfectly fill and clear lines
+    // We'll fill 4 rows at a time for a satisfying quad clear
+    function generateSequence() {
+      // Build a sequence that fills rows 16-19 (bottom 4 rows) completely
+      // Using a mix of pieces placed strategically
+      const seq = [];
+    
+      // Pattern: fill bottom 4 rows using a scripted set of drops
+      // Row layout (bottom 4 rows, cols 0-9):
+      // We'll place pieces to fill exactly 4 complete rows
+    
+      // Drop 1: I-piece flat at col 0, row 19
+      seq.push({ type: 'I', col: 0, row: 16, rot: 1 }); // vertical I at col 0
+      // Drop 2: I-piece flat at col 1, row 16
+      seq.push({ type: 'I', col: 1, row: 16, rot: 1 });
+      // Drop 3: O at col 2
+      seq.push({ type: 'O', col: 2, row: 16, rot: 0 });
+      seq.push({ type: 'O', col: 2, row: 18, rot: 0 });
+      // Drop 4: O at col 4
+      seq.push({ type: 'O', col: 4, row: 16, rot: 0 });
+      seq.push({ type: 'O', col: 4, row: 18, rot: 0 });
+      // Drop 5: O at col 6
+      seq.push({ type: 'O', col: 6, row: 16, rot: 0 });
+      seq.push({ type: 'O', col: 6, row: 18, rot: 0 });
+      // Drop 6: I-piece at col 8
+      seq.push({ type: 'I', col: 8, row: 16, rot: 1 });
+      // Drop 7: I-piece at col 9
+      seq.push({ type: 'I', col: 9, row: 16, rot: 1 });
+    
+      return seq;
+    }
+    
+    // Get cells for a piece given rotation
+    function getPieceCells(type, col, row, rot) {
+      let cells = SHAPES[type].map(([x,y]) => [x, y]);
+    
+      // Apply rotation
+      for (let r = 0; r < (rot || 0); r++) {
+        cells = cells.map(([x,y]) => [-y, x]);
+        const minX = Math.min(...cells.map(c => c[0]));
+        const minY = Math.min(...cells.map(c => c[1]));
+        cells = cells.map(([x,y]) => [x - minX, y - minY]);
+      }
+    
+      return cells.map(([x,y]) => [col + x, row + y]);
+    }
+    
+    // Animation state machine
+    const STATE_DROPPING = 0;
+    const STATE_LOCKING = 1;
+    const STATE_CLEARING = 2;
+    const STATE_COLLAPSING = 3;
+    const STATE_PAUSE = 4;
+    
+    let state = STATE_PAUSE;
+    let sequence = [];
+    let seqIndex = 0;
+    
+    // Current dropping piece
+    let currentPiece = null;
+    let dropY = 0; // animated Y position (fractional)
+    let dropTargetY = 0;
+    let dropSpeed = 0;
+    
+    // Line clear animation
+    let clearingRows = [];
+    let clearProgress = 0;
+    let collapseProgress = 0;
+    
+    // Glow effects
+    let glowIntensity = 0;
+    
+    // Timing
+    let pauseTimer = 0;
+    let lockTimer = 0;
+    
+    // Stars background
+    const stars = Array.from({length: 120}, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      size: Math.random() * 1.5 + 0.3,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: Math.random() * 0.5 + 0.5,
+    }));
+    
+    function startNewCycle() {
+      grid = Array.from({length: GRID_ROWS}, () => Array(GRID_COLS).fill(null));
+      sequence = generateSequence();
+      seqIndex = 0;
+      startNextDrop();
+    }
+    
+    function startNextDrop() {
+      if (seqIndex >= sequence.length) {
+        // All pieces placed — check for line clears
+        checkLineClear();
+        return;
+      }
+    
+      const s = sequence[seqIndex];
+      currentPiece = {
+        type: s.type,
+        col: s.col,
+        rot: s.rot,
+        targetRow: s.row,
+        color: COLORS[s.type],
+      };
+      dropY = -4;
+      dropTargetY = s.row;
+      dropSpeed = 0.12 + seqIndex * 0.015; // accelerate slightly each piece
+      state = STATE_DROPPING;
+    }
+    
+    function lockPiece() {
+      const cells = getPieceCells(currentPiece.type, currentPiece.col, currentPiece.targetRow, currentPiece.rot);
+      cells.forEach(([x, y]) => {
+        if (y >= 0 && y < GRID_ROWS && x >= 0 && x < GRID_COLS) {
+          grid[y][x] = currentPiece.color;
+        }
+      });
+      currentPiece = null;
+      seqIndex++;
+      lockTimer = 6;
+      state = STATE_LOCKING;
+    }
+    
+    function checkLineClear() {
+      clearingRows = [];
+      for (let r = 0; r < GRID_ROWS; r++) {
+        if (grid[r].every(c => c !== null)) {
+          clearingRows.push(r);
+        }
+      }
+      if (clearingRows.length > 0) {
+        clearProgress = 0;
+        state = STATE_CLEARING;
+        // Spawn particles
+        spawnClearParticles();
+      } else {
+        // No clears, restart
+        pauseTimer = 60;
+        state = STATE_PAUSE;
+      }
+    }
+    
+    function spawnClearParticles() {
+      clearingRows.forEach(row => {
+        for (let col = 0; col < GRID_COLS; col++) {
+          const color = grid[row][col] || '#fff';
+          const cx = BOARD_X + col * CELL + CELL / 2;
+          const cy = BOARD_Y + row * CELL + CELL / 2;
+          for (let i = 0; i < 6; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 3 + 1.5;
+            particles.push({
+              x: cx,
+              y: cy,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed - 1,
+              life: 1,
+              decay: 0.012 + Math.random() * 0.01,
+              color: color,
+              size: Math.random() * 3 + 1.5,
+            });
+          }
+        }
+      });
+    }
+    
+    function collapseRows() {
+      // Remove cleared rows
+      const newGrid = grid.filter((_, i) => !clearingRows.includes(i));
+      while (newGrid.length < GRID_ROWS) {
+        newGrid.unshift(Array(GRID_COLS).fill(null));
+      }
+      grid = newGrid;
+      collapseProgress = 0;
+      state = STATE_COLLAPSING;
+    }
+    
+    // --- Drawing ---
+    
+    function drawBackground(t) {
+      ctx.fillStyle = '#0a0a12';
+      ctx.fillRect(0, 0, W, H);
+    
+      // Stars
+      stars.forEach(s => {
+        const alpha = 0.3 + 0.4 * Math.sin(s.twinkle + t * s.speed * 0.001);
+        ctx.fillStyle = `rgba(200,210,255,${alpha})`;
+        ctx.beginPath();
+        ctx.arc(s.x * W, s.y * H, s.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+    
+    function drawGrid() {
+      // Board background
+      ctx.fillStyle = 'rgba(10, 12, 25, 0.9)';
+      ctx.fillRect(BOARD_X, BOARD_Y, BOARD_W, BOARD_H);
+    
+      // Grid lines
+      ctx.strokeStyle = 'rgba(40, 45, 70, 0.4)';
+      ctx.lineWidth = 0.5;
+      for (let c = 0; c <= GRID_COLS; c++) {
+        ctx.beginPath();
+        ctx.moveTo(BOARD_X + c * CELL, BOARD_Y);
+        ctx.lineTo(BOARD_X + c * CELL, BOARD_Y + BOARD_H);
+        ctx.stroke();
+      }
+      for (let r = 0; r <= GRID_ROWS; r++) {
+        ctx.beginPath();
+        ctx.moveTo(BOARD_X, BOARD_Y + r * CELL);
+        ctx.lineTo(BOARD_X + BOARD_W, BOARD_Y + r * CELL);
+        ctx.stroke();
+      }
+    
+      // Border glow
+      const glow = glowIntensity;
+      if (glow > 0) {
+        ctx.shadowColor = '#00f5ff';
+        ctx.shadowBlur = 20 * glow;
+      }
+      ctx.strokeStyle = `rgba(60, 80, 140, ${0.5 + glow * 0.5})`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(BOARD_X - 1, BOARD_Y - 1, BOARD_W + 2, BOARD_H + 2);
+      ctx.shadowBlur = 0;
+    }
+    
+    function drawCell(x, y, color, alpha = 1, flash = 0) {
+      const px = BOARD_X + x * CELL;
+      const py = BOARD_Y + y * CELL;
+      const pad = 1;
+    
+      // Main cell
+      ctx.globalAlpha = alpha;
+    
+      // Glow
+      if (flash > 0) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 15 * flash;
+      }
+    
+      // Base
+      ctx.fillStyle = color;
+      ctx.fillRect(px + pad, py + pad, CELL - pad * 2, CELL - pad * 2);
+    
+      // Highlight (top-left)
+      ctx.fillStyle = `rgba(255,255,255,${0.25 * alpha})`;
+      ctx.fillRect(px + pad, py + pad, CELL - pad * 2, 3);
+      ctx.fillRect(px + pad, py + pad, 3, CELL - pad * 2);
+    
+      // Shadow (bottom-right)
+      ctx.fillStyle = `rgba(0,0,0,${0.3 * alpha})`;
+      ctx.fillRect(px + pad, py + CELL - pad - 3, CELL - pad * 2, 3);
+      ctx.fillRect(px + CELL - pad - 3, py + pad, 3, CELL - pad * 2);
+    
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+    
+    function drawLockedCells() {
+      for (let r = 0; r < GRID_ROWS; r++) {
+        for (let c = 0; c < GRID_COLS; c++) {
+          if (grid[r][c]) {
+            let flash = 0;
+            let alpha = 1;
+    
+            if (state === STATE_CLEARING && clearingRows.includes(r)) {
+              // Flash white then fade out
+              if (clearProgress < 0.3) {
+                flash = clearProgress / 0.3;
+              } else {
+                alpha = 1 - (clearProgress - 0.3) / 0.7;
+                flash = 1 - (clearProgress - 0.3) / 0.7;
+              }
+            }
+    
+            drawCell(c, r, grid[r][c], alpha, flash);
+          }
+        }
+      }
+    }
+    
+    function drawDroppingPiece() {
+      if (!currentPiece) return;
+      const cells = getPieceCells(currentPiece.type, currentPiece.col, 0, currentPiece.rot);
+      const offsetY = dropY;
+    
+      cells.forEach(([x, baseY]) => {
+        const drawYpx = BOARD_Y + (baseY + offsetY) * CELL;
+        const drawXpx = BOARD_X + x * CELL;
+        const pad = 1;
+    
+        // Only draw if visible
+        if (drawYpx + CELL > BOARD_Y && drawYpx < BOARD_Y + BOARD_H) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(BOARD_X, BOARD_Y, BOARD_W, BOARD_H);
+          ctx.clip();
+    
+          // Glow trail
+          ctx.shadowColor = currentPiece.color;
+          ctx.shadowBlur = 8;
+          ctx.fillStyle = currentPiece.color;
+          ctx.fillRect(drawXpx + pad, drawYpx + pad, CELL - pad * 2, CELL - pad * 2);
+    
+          // Highlight
+          ctx.fillStyle = `rgba(255,255,255,0.25)`;
+          ctx.fillRect(drawXpx + pad, drawYpx + pad, CELL - pad * 2, 3);
+          ctx.fillRect(drawXpx + pad, drawYpx + pad, 3, CELL - pad * 2);
+    
+          ctx.shadowBlur = 0;
+          ctx.restore();
+        }
+      });
+    }
+    
+    function drawParticles() {
+      particles.forEach(p => {
+        ctx.globalAlpha = p.life;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 6 * p.life;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+    }
+    
+    function drawClearFlash() {
+      if (state === STATE_CLEARING && clearProgress < 0.4) {
+        const intensity = Math.sin(clearProgress / 0.4 * Math.PI) * 0.15;
+        ctx.fillStyle = `rgba(200, 230, 255, ${intensity})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+    }
+    
+    // Score display
+    let displayScore = 0;
+    let targetScore = 0;
+    let totalClears = 0;
+    
+    function drawHUD() {
+      displayScore += (targetScore - displayScore) * 0.1;
+    
+      ctx.fillStyle = 'rgba(150, 170, 220, 0.5)';
+      ctx.font = `${Math.floor(CELL * 0.55)}px "Courier New", monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText('TETRIS SATISFACTION', W / 2, BOARD_Y - CELL * 0.5);
+    
+      ctx.font = `${Math.floor(CELL * 0.4)}px "Courier New", monospace`;
+      ctx.fillStyle = 'rgba(100, 130, 200, 0.4)';
+      ctx.fillText(`LINES: ${totalClears}`, W / 2, BOARD_Y + BOARD_H + CELL * 0.8);
+    }
+    
+    // --- Update ---
+    
+    function update(dt) {
+      // Update particles
+      particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.05;
+        p.life -= p.decay;
+      });
+      particles = particles.filter(p => p.life > 0);
+    
+      switch (state) {
+        case STATE_DROPPING:
+          dropY += dropSpeed * dt;
+          if (dropY >= dropTargetY) {
+            dropY = dropTargetY;
+            lockPiece();
+          }
+          break;
+    
+        case STATE_LOCKING:
+          lockTimer -= dt;
+          if (lockTimer <= 0) {
+            startNextDrop();
+          }
+          break;
+    
+        case STATE_CLEARING:
+          clearProgress += 0.018 * dt;
+          glowIntensity = Math.sin(clearProgress * Math.PI) * 0.8;
+          if (clearProgress >= 1) {
+            totalClears += clearingRows.length;
+            targetScore += clearingRows.length * 100;
+            collapseRows();
+          }
+          break;
+    
+        case STATE_COLLAPSING:
+          collapseProgress += 0.03 * dt;
+          glowIntensity *= 0.95;
+          if (collapseProgress >= 1) {
+            pauseTimer = 50;
+            state = STATE_PAUSE;
+          }
+          break;
+    
+        case STATE_PAUSE:
+          glowIntensity *= 0.95;
+          pauseTimer -= dt;
+          if (pauseTimer <= 0) {
+            startNewCycle();
+          }
+          break;
+      }
+    }
+    
+    // --- Main Loop ---
+    
+    let lastTime = 0;
+    function loop(timestamp) {
+      const dt = Math.min((timestamp - lastTime) / 16.67, 3); // normalize to ~60fps
+      lastTime = timestamp;
+    
+      update(dt);
+    
+      drawBackground(timestamp);
+      drawGrid();
+      drawLockedCells();
+      drawDroppingPiece();
+      drawParticles();
+      drawClearFlash();
+      drawHUD();
+    
+      requestAnimationFrame(loop);
+    }
+    
+    // Kick off
+    startNewCycle();
+    requestAnimationFrame(loop);
+</script>
+</body>
+</html>

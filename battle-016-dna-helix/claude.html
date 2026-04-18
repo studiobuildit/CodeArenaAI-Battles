@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D DNA Helix - 540x960</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="dnaCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('dnaCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+
+        const nodes = 30;
+        const helixRadius = 120;
+        const verticalSpacing = 25;
+        const rotationSpeed = 0.02;
+        const rungFrequency = 2;
+
+        let angle = 0;
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+
+            canvas.width = vpw * dpr;
+            canvas.height = vph * dpr;
+
+            const scaleX = (vpw / W) * dpr;
+            const scaleY = (vph / H) * dpr;
+            ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        }
+
+        function drawNode(x, y, z, color) {
+            const perspective = 0.5 + (z + helixRadius) / (helixRadius * 2);
+            const radius = 8 * perspective;
+            const alpha = 0.3 + 0.7 * perspective;
+
+            ctx.beginPath();
+            ctx.arc(x + W / 2, y + (H / 2 - (nodes * verticalSpacing) / 2), radius, 0, Math.PI * 2);
+            ctx.fillStyle = color.replace('ALPHA', alpha.toFixed(2));
+            
+            if (z > 0) {
+                ctx.shadowBlur = 10 * perspective;
+                ctx.shadowColor = color.replace('ALPHA', '0.5');
+            } else {
+                ctx.shadowBlur = 0;
+            }
+            
+            ctx.fill();
+            ctx.closePath();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawRung(x1, y, z1, x2, z2) {
+            const midZ = (z1 + z2) / 2;
+            const perspective = 0.5 + (midZ + helixRadius) / (helixRadius * 2);
+            const alpha = (0.2 + 0.5 * perspective).toFixed(2);
+
+            ctx.beginPath();
+            ctx.lineWidth = 4 * perspective;
+            ctx.strokeStyle = `rgba(200, 200, 200, ${alpha})`;
+            ctx.moveTo(x1 + W / 2, y + (H / 2 - (nodes * verticalSpacing) / 2));
+            ctx.lineTo(x2 + W / 2, y + (H / 2 - (nodes * verticalSpacing) / 2));
+            ctx.stroke();
+            ctx.closePath();
+        }
+
+        function render() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, W, H);
+
+            const points = [];
+
+            for (let i = 0; i < nodes; i++) {
+                const layerAngle = angle + (i * 0.4);
+                const y = i * verticalSpacing;
+
+                const x1 = Math.cos(layerAngle) * helixRadius;
+                const z1 = Math.sin(layerAngle) * helixRadius;
+
+                const x2 = Math.cos(layerAngle + Math.PI) * helixRadius;
+                const z2 = Math.sin(layerAngle + Math.PI) * helixRadius;
+
+                points.push({ x1, x2, y, z1, z2, i });
+            }
+
+            const drawQueue = [];
+            points.forEach(p => {
+                drawQueue.push({
+                    type: 'rung',
+                    z: (p.z1 + p.z2) / 2,
+                    data: p
+                });
+                drawQueue.push({
+                    type: 'node',
+                    z: p.z1,
+                    x: p.x1,
+                    y: p.y,
+                    color: 'rgba(52, 152, 219, ALPHA)'
+                });
+                drawQueue.push({
+                    type: 'node',
+                    z: p.z2,
+                    x: p.x2,
+                    y: p.y,
+                    color: 'rgba(231, 76, 60, ALPHA)'
+                });
+            });
+
+            drawQueue.sort((a, b) => a.z - b.z);
+
+            drawQueue.forEach(item => {
+                if (item.type === 'node') {
+                    drawNode(item.x, item.y, item.z, item.color);
+                } else {
+                    drawRung(item.data.x1, item.data.y, item.data.z1, item.data.x2, item.data.z2);
+                }
+            });
+
+            angle += rotationSpeed;
+            requestAnimationFrame(render);
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        render();
+    </script>
+</body>
+</html>

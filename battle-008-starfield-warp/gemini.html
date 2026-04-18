@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Warp Speed</title>
+<style>
+body { margin: 0; background: #000; overflow: hidden; width: 100vw; height: 100vh; }
+canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let width = 1, height = 1, dpr = 1;
+let CX, CY;
+const stars = [];
+const numStars = 800;
+
+function resize() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  width = Math.max(1, window.innerWidth);
+  height = Math.max(1, window.innerHeight);
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  CX = width / 2;
+  CY = height / 2;
+  for (let i = 0; i < stars.length; i++) {
+    stars[i].reset(true);
+  }
+}
+
+class Star {
+  constructor() {
+    this.reset(true);
+  }
+
+  reset(randomZ = false) {
+    this.x = (Math.random() - 0.5) * width * 2;
+    this.y = (Math.random() - 0.5) * height * 2;
+    this.z = randomZ ? Math.random() * 2000 : 2000;
+    this.pz = this.z;
+  }
+
+  update() {
+    this.pz = this.z;
+    this.z -= 25;
+
+    if (this.z <= 0) {
+      this.reset();
+    }
+  }
+
+  draw() {
+    const x = (this.x / this.z) * 1000 + CX;
+    const y = (this.y / this.z) * 1000 + CY;
+    const px = (this.x / this.pz) * 1000 + CX;
+    const py = (this.y / this.pz) * 1000 + CY;
+
+    const size = (2000 - this.z) / 2000 * 4;
+    const alpha = (2000 - this.z) / 2000;
+
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = `rgba(200, 220, 255, ${alpha * 0.5})`;
+    ctx.lineWidth = size * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.shadowBlur = size * 2;
+    ctx.shadowColor = '#aaccff';
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+}
+
+resize();
+window.addEventListener('resize', resize);
+
+for (let i = 0; i < numStars; i++) {
+  stars.push(new Star());
+}
+
+function animate() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+  ctx.fillRect(0, 0, width, height);
+
+  stars.forEach(star => {
+    star.update();
+    star.draw();
+  });
+
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>

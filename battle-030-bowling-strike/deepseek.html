@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Bowling Strike | Curve Ball + Auto Reset</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            background: #000000;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+        .canvas-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+        }
+        canvas {
+            display: block;
+            box-shadow: 0 0 0 1px #2a5a3a;
+            background: #0a0f0a;
+        }
+    </style>
+</head>
+<body>
+<div class="canvas-wrapper">
+    <canvas id="gameCanvas" width="540" height="960"></canvas>
+</div>
+
+<script>
+    (function() {
+        const LOGIC_W = 540;
+        const LOGIC_H = 960;
+        const canvas = document.getElementById('gameCanvas');
+        let ctx = canvas.getContext('2d');
+
+        const LANE_LEFT = 100;
+        const LANE_RIGHT = LOGIC_W - 100;
+        const LANE_TOP = 140;
+        const LANE_BOTTOM = LOGIC_H - 100;
+        const PIN_AREA_Y = 210;
+        const BALL_START_X = LOGIC_W / 2;
+        const BALL_START_Y = LANE_BOTTOM - 40;
+        const PIN_RADIUS = 9;
+
+        let ball = { x:BALL_START_X, y:BALL_START_Y, vx:0, vy:0, radius:12, active:false, curve:0 };
+        let pins = [];
+        let pinStanding = [];
+        let strikeCelebration = 0;
+        let score = 0;
+        let frameScore = 0;
+        let rollState = "IDLE";
+        let resetTimer = 0;
+        const particles = [];
+
+        function initPins() {
+            pins = [];
+            pinStanding = [];
+            const ROW_START_X = LOGIC_W / 2;
+            const FIRST_ROW_Y = PIN_AREA_Y + 20;
+            const PIN_SPACING = 26;
+            const rows = [1,2,3,4];
+            let pinId = 0;
+            for (let r=0;r<rows.length;r++) {
+                const count = rows[r];
+                const y = FIRST_ROW_Y + r * PIN_SPACING;
+                const startX = ROW_START_X - (count - 1) * PIN_SPACING / 2;
+                for (let i=0;i<count;i++) {
+                    pins.push({ x:startX + i*PIN_SPACING, y, radius:PIN_RADIUS, id:pinId++ });
+                    pinStanding.push(true);
+                }
+            }
+        }
+
+        function resetGame() {
+            ball.x = BALL_START_X; ball.y = BALL_START_Y; ball.vx = 0; ball.vy = 0;
+            ball.active = false; ball.curve = 0;
+            rollState = "IDLE"; resetTimer = 0; strikeCelebration = 0; frameScore = 0;
+            initPins();
+            particles.length = 0;
+        }
+
+        function autoRoll() {
+            if (rollState !== "IDLE") return;
+            ball.curve = (Math.random() - 0.5) * 0.9;
+            ball.vx = ball.curve * 1.4;
+            ball.vy = -(6.8 + Math.random() * 2.2);
+            ball.active = true;
+            rollState = "ROLLING";
+        }
+
+        function addImpactParticles(px, py) {
+            const count = 12 + Math.floor(Math.random() * 10);
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: px, y: py,
+                    vx: (Math.random() - 0.5) * 3.5,
+                    vy: (Math.random() - 0.5) * 3 - 1.5,
+                    life: 0.7 + Math.random() * 0.5,
+                    size: 2 + Math.random() * 4
+                });
+            }
+        }
+
+        function evaluateRoll() {
+            const standingCount = pinStanding.filter(Boolean).length;
+            const knocked = 10 - standingCount;
+            frameScore = knocked;
+            if (knocked === 10) strikeCelebration = 42;
+            score += knocked;
+        }
+
+        function updateBall() {
+            if (!ball.active) return;
+            ball.vx += ball.curve * 0.12;
+            ball.vx = Math.max(-3.2, Math.min(3.2, ball.vx));
+            ball.vx *= 0.995;
+            ball.vy *= 0.998;
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+
+            if (ball.x - ball.radius < LANE_LEFT) { ball.x = LANE_LEFT + ball.radius; ball.vx *= -0.4; }
+            if (ball.x + ball.radius > LANE_RIGHT) { ball.x = LANE_RIGHT - ball.radius; ball.vx *= -0.4; }
+
+            if (ball.y + ball.radius < LANE_TOP - 20) {
+                ball.active = false;
+                evaluateRoll();
+                rollState = "RESETTING";
+                resetTimer = 55;
+                return;
+            }
+
+            for (let i = 0; i < pins.length; i++) {
+                if (!pinStanding[i]) continue;
+                const p = pins[i];
+                const dx = ball.x - p.x;
+                const dy = ball.y - p.y;
+                if (Math.hypot(dx, dy) < ball.radius + p.radius) {
+                    pinStanding[i] = false;
+                    frameScore++;
+                    addImpactParticles(p.x, p.y);
+                    ball.vx += dx * 0.01;
+                    ball.vy += dy * 0.01;
+                }
+            }
+        }
+
+        function updateParticles() {
+            for (let i=0; i<particles.length; i++) {
+                const p = particles[i];
+                p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life -= 0.02;
+                if (p.life <= 0 || p.y > LOGIC_H + 80) { particles.splice(i,1); i--; }
+            }
+        }
+
+        function updateResetTimer() {
+            if (rollState === "RESETTING" && resetTimer > 0) {
+                resetTimer--;
+                if (resetTimer === 0) {
+                    initPins();
+                    ball.x = BALL_START_X; ball.y = BALL_START_Y; ball.vx = 0; ball.vy = 0; ball.active = false;
+                    rollState = "IDLE";
+                }
+            }
+        }
+
+        function drawBackground() {
+            ctx.fillStyle = "#070d0a";
+            ctx.fillRect(0, 0, LOGIC_W, LOGIC_H);
+        }
+
+        function drawLane() {
+            ctx.fillStyle = "#e8c994";
+            ctx.fillRect(LANE_LEFT, LANE_TOP, LANE_RIGHT-LANE_LEFT, LANE_BOTTOM-LANE_TOP);
+            ctx.fillStyle = "#6a4e2e";
+            ctx.fillRect(LANE_LEFT-18, LANE_TOP-5, 15, LANE_BOTTOM-LANE_TOP+20);
+            ctx.fillRect(LANE_RIGHT+3, LANE_TOP-5, 15, LANE_BOTTOM-LANE_TOP+20);
+        }
+
+        function drawPins() {
+            for (let i = 0; i < pins.length; i++) {
+                if (!pinStanding[i]) continue;
+                const p = pins[i];
+                ctx.fillStyle = "#f5e6d3";
+                ctx.beginPath();
+                ctx.ellipse(p.x, p.y, PIN_RADIUS, PIN_RADIUS*1.2, 0, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = "#c24433";
+                ctx.fillRect(p.x-4, p.y-1, 8, 4);
+            }
+        }
+
+        function drawBall() {
+            if (!ball.active && rollState !== "ROLLING") return;
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI*2);
+            ctx.fillStyle = "#d94f30";
+            ctx.fill();
+        }
+
+        function drawParticles() {
+            for (const p of particles) {
+                ctx.globalAlpha = p.life * 0.8;
+                ctx.fillStyle = "#ffcc88";
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size * 0.7, 0, Math.PI*2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        function drawScoreUI() {
+            ctx.font = "bold 32px 'Courier New'";
+            ctx.fillStyle = "#fff3cf";
+            ctx.fillText(`SCORE: ${score}`, 32, 68);
+            if (strikeCelebration > 0) {
+                ctx.font = "bold 34px monospace";
+                ctx.fillStyle = "#ffdd88";
+                ctx.fillText("STRIKE!", LOGIC_W/2 - 70, 85);
+                strikeCelebration--;
+            }
+        }
+
+        function updateAutoPlay() {
+            if (rollState === "IDLE" && !ball.active) autoRoll();
+            updateBall();
+            updateParticles();
+            updateResetTimer();
+        }
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            const cw = container.clientWidth;
+            const ch = container.clientHeight;
+            const ratio = LOGIC_W / LOGIC_H;
+            let drawW = cw;
+            let drawH = cw / ratio;
+            if (drawH > ch) { drawH = ch; drawW = ch * ratio; }
+            canvas.style.width = `${drawW}px`;
+            canvas.style.height = `${drawH}px`;
+            canvas.width = LOGIC_W;
+            canvas.height = LOGIC_H;
+            ctx = canvas.getContext('2d');
+        }
+
+        function animate() {
+            updateAutoPlay();
+            drawBackground();
+            drawLane();
+            drawPins();
+            drawBall();
+            drawParticles();
+            drawScoreUI();
+            requestAnimationFrame(animate);
+        }
+
+        function init() {
+            initPins();
+            resetGame();
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 20));
+            animate();
+        }
+        init();
+    })();
+</script>
+</body>
+</html>

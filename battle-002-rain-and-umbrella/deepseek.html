@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Heavy Rain on Umbrella | Wind & Ripples | Canvas Animation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            background: linear-gradient(145deg, #0a1428 0%, #03070f 100%);
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', 'Courier New', monospace;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100vw;
+            height: 100vh;
+            background: transparent;
+            border-radius: 0;
+            padding: 0;
+            backdrop-filter: none;
+            box-shadow: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            margin: 0;
+            border-radius: 0;
+            box-shadow: none;
+            cursor: pointer;
+        }
+
+        .info-panel {
+            display: none;
+            justify-content: center;
+            gap: 1.5rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+            color: #c0e0ff;
+            font-size: 0.85rem;
+            font-weight: 500;
+            text-shadow: 0 1px 2px black;
+        }
+
+        .info-panel span {
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(5px);
+            padding: 0.3rem 1rem;
+            border-radius: 2rem;
+            letter-spacing: 1px;
+            font-family: monospace;
+        }
+
+        .wind-badge {
+            background: #2c3e66aa;
+            border-left: 3px solid #7ad0ff;
+        }
+
+        @keyframes subtlePulse {
+            0% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+<div>
+    <div class="container">
+        <canvas id="rainCanvas" width="900" height="650"></canvas>
+        <div class="info-panel">
+            <span>🌧️ HEAVY RAIN</span>
+            <span class="wind-badge" id="windIndicator">🌬️ WIND: CALM</span>
+            <span>☂️ DRAG MOUSE -> TILT UMBRELLA</span>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function(){
+        // ------------------- CANVAS SETUP -------------------
+        const canvas = document.getElementById('rainCanvas');
+        const ctx = canvas.getContext('2d');
+        const windIndicator = document.getElementById('windIndicator');
+
+        let dpr = 1;
+        let width = window.innerWidth;
+        let height = window.innerHeight;
+        let GROUND_Y = height - 45;
+
+        // ------------------- UMBRELLA PARAMETERS -------------------
+        let umbrella = {
+            x: width/2,
+            y: height - 120,
+            tilt: 0,
+            targetTilt: 0,
+            width: 210,
+            heightArc: 85,
+            handleLength: 65,
+            color: '#2c2e3e',
+            fabricColor: '#2c2e3e',
+            rimColor: '#e0c878'
+        };
+
+        function applyResize() {
+            dpr = Math.max(1, window.devicePixelRatio || 1);
+            width = window.innerWidth;
+            height = window.innerHeight;
+            GROUND_Y = height - 45;
+            canvas.width = Math.max(1, Math.floor(width * dpr));
+            canvas.height = Math.max(1, Math.floor(height * dpr));
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            umbrella.x = width / 2;
+            umbrella.y = height - 120;
+        }
+        applyResize();
+        window.addEventListener('resize', applyResize);
+
+        let mouseX = umbrella.x;
+        let windGust = 0;
+        let gustIntensity = 0;
+
+        const GRAVITY = 0.28;
+        let drops = [];
+        const MAX_DROPS = 280;
+        const SPAWN_RATE = 0.62;
+        let spawnCounter = 0;
+
+        let ripples = [];
+        const MAX_RIPPLES = 45;
+        let gustTimer = 0;
+
+        function updateWindUI() {
+            let desc = "🍃 LIGHT";
+            let absGust = Math.abs(gustIntensity);
+            if (absGust > 0.22) desc = "💨 GUSTY!";
+            else if (absGust > 0.12) desc = "🌬️ MODERATE";
+            else if (absGust > 0.03) desc = "🍃 BREEZE";
+            else desc = "🌀 CALM";
+            windIndicator.innerHTML = `🌬️ WIND: ${desc}`;
+            windIndicator.style.background = gustIntensity > 0.15 ? "#3a4c7caa" : "#2c3e66aa";
+        }
+
+        function updateUmbrellaTilt() {
+            let relativeX = (mouseX - width/2) / (width/2);
+            relativeX = Math.min(0.9, Math.max(-0.9, relativeX));
+            let mouseTilt = relativeX * 0.55;
+            let totalTarget = mouseTilt + gustIntensity * 0.65;
+            totalTarget = Math.min(0.75, Math.max(-0.75, totalTarget));
+            umbrella.targetTilt = totalTarget;
+            umbrella.tilt += (umbrella.targetTilt - umbrella.tilt) * 0.12;
+        }
+
+        function getUmbrellaGeometry() {
+            const offsetUp = 42;
+            const canopyRadiusX = umbrella.width/2;
+            const canopyRadiusY = umbrella.heightArc;
+            const cos = Math.cos(umbrella.tilt);
+            const sin = Math.sin(umbrella.tilt);
+            const dx = 0;
+            const dy = -offsetUp;
+            const rotX = dx * cos - dy * sin;
+            const rotY = dx * sin + dy * cos;
+            return {
+                cx: umbrella.x + rotX,
+                cy: umbrella.y + rotY,
+                rx: canopyRadiusX,
+                ry: canopyRadiusY,
+                tilt: umbrella.tilt
+            };
+        }
+
+        function checkUmbrellaCollision(drop) {
+            const geom = getUmbrellaGeometry();
+            const cosT = Math.cos(-geom.tilt);
+            const sinT = Math.sin(-geom.tilt);
+            const dx = drop.x - geom.cx;
+            const dy = drop.y - geom.cy;
+            const localX = dx * cosT - dy * sinT;
+            const localY = dx * sinT + dy * cosT;
+
+            const rx = geom.rx;
+            const ry = geom.ry;
+            const ellipseTest = (localX*localX)/(rx*rx) + (localY*localY)/(ry*ry);
+            if (ellipseTest <= 1.05 && localY <= 3 && drop.vy > 0) {
+                let slideDir = Math.sign(localX);
+                if (Math.abs(localX) < 8) slideDir = (Math.random() > 0.5 ? 1 : -1) * 0.8;
+                return { hit: true, slideX: slideDir * (1.2 + Math.random() * 0.7) };
+            }
+            return { hit: false };
+        }
+
+        function addRipple(x, y, intensity = 1.0) {
+            if (ripples.length > MAX_RIPPLES) ripples.shift();
+            ripples.push({ x, y, radius: 3, alpha: 0.75, life: 1.0, intensity: Math.min(1.2, intensity) });
+        }
+
+        function spawnRaindrop() {
+            const baseX = Math.random() * width;
+            const windDrift = (windGust + (Math.random() - 0.5) * 0.6) * 1.1;
+            drops.push({
+                x: baseX,
+                y: Math.random() * -20 - 15,
+                vy: 3.2 + Math.random() * 2.5,
+                vx: (Math.random() - 0.5) * 0.8 + windDrift * 0.9,
+                size: 2.5 + Math.random() * 3.2,
+                state: 'falling',
+                slideTimer: 0
+            });
+        }
+
+        function updateRain() {
+            gustTimer += 0.016;
+            let rawGust = Math.sin(gustTimer * 0.7) * 0.22 + Math.sin(gustTimer * 1.9) * 0.12;
+            rawGust += Math.sin(gustTimer * 0.23) * 0.08;
+            let strongGust = Math.sin(gustTimer * 0.43) > 0.85 ? 0.28 : 0;
+            gustIntensity = Math.min(0.52, Math.max(-0.48, rawGust + strongGust));
+            windGust = gustIntensity * 1.6;
+            updateWindUI();
+            updateUmbrellaTilt();
+
+            spawnCounter += SPAWN_RATE * (0.9 + Math.abs(gustIntensity)*1.2);
+            if (spawnCounter >= 1 && drops.length < MAX_DROPS) {
+                let spawnCount = Math.min(3, Math.floor(spawnCounter));
+                for(let i=0; i<spawnCount; i++) spawnRaindrop();
+                spawnCounter -= spawnCount;
+            } else if (drops.length < MAX_DROPS-20 && Math.random()<0.12) {
+                spawnRaindrop();
+            }
+
+            for (let i = drops.length-1; i >= 0; i--) {
+                let d = drops[i];
+                if (d.state === 'falling') {
+                    d.vy = Math.min(12, d.vy + GRAVITY * 0.9);
+                    d.vx = Math.min(2.8, Math.max(-2.8, d.vx + (windGust * 0.09)));
+                    d.x += d.vx;
+                    d.y += d.vy;
+
+                    const collision = checkUmbrellaCollision(d);
+                    if (collision.hit && d.vy > 1.2) {
+                        d.state = 'sliding';
+                        d.slideTimer = 0;
+                        d.vx = (collision.slideX + umbrella.tilt * 1.8) * (1.6 + Math.random() * 1.2);
+                        d.vy = 0.5 + Math.random() * 1.2;
+                        addRipple(d.x, d.y-3, 0.45);
+                        d.y -= 4;
+                        continue;
+                    }
+
+                    if (d.y + d.size >= GROUND_Y) {
+                        addRipple(d.x, GROUND_Y - 2, Math.min(1.0, d.vy / 7) * 0.9);
+                        drops.splice(i,1);
+                        continue;
+                    }
+                } else if (d.state === 'sliding') {
+                    d.slideTimer++;
+                    d.vx *= 0.98;
+                    d.vy += 0.18;
+                    d.x += d.vx;
+                    d.y += d.vy;
+                    const geom = getUmbrellaGeometry();
+                    let distToCenter = Math.hypot(d.x - geom.cx, d.y - geom.cy);
+                    if (d.y > geom.cy + 25 || distToCenter > umbrella.width*0.9 || d.slideTimer > 55) {
+                        d.state = 'falling';
+                        d.vy = 2.5 + Math.random() * 2;
+                        d.vx += (Math.random() - 0.5) * 1.2;
+                    }
+                    if (d.y + d.size >= GROUND_Y) {
+                        addRipple(d.x, GROUND_Y-2, 0.7);
+                        drops.splice(i,1);
+                        continue;
+                    }
+                }
+                if (d.y > height+80 || d.x < -80 || d.x > width + 80) drops.splice(i,1);
+            }
+
+            for (let i=0; i<ripples.length; i++) {
+                let r = ripples[i];
+                r.radius += 2.1;
+                r.life -= 0.025;
+                r.alpha = r.life * 0.75;
+                if (r.life <= 0 || r.radius > 85) {
+                    ripples.splice(i,1);
+                    i--;
+                }
+            }
+        }
+
+        function drawBackground() {
+            let grad = ctx.createLinearGradient(0, 0, 0, height);
+            grad.addColorStop(0, '#121c2c');
+            grad.addColorStop(0.7, '#1f2a3f');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.fillStyle = '#1f293d';
+            for (let i=0; i<12; i++) {
+                ctx.beginPath();
+                ctx.ellipse(70 + i*90 + Math.sin(Date.now()*0.0008 + i)*25, 45, 70, 40, 0, 0, Math.PI*2);
+                ctx.fillStyle = '#1e2a3c';
+                ctx.fill();
+            }
+        }
+
+        function drawUmbrella() {
+            ctx.save();
+            ctx.translate(umbrella.x, umbrella.y);
+            ctx.rotate(umbrella.tilt);
+
+            ctx.beginPath();
+            ctx.moveTo(-6, 0);
+            ctx.lineTo(6, 0);
+            ctx.lineTo(8, umbrella.handleLength);
+            ctx.lineTo(-8, umbrella.handleLength);
+            ctx.fillStyle = '#6b4c3b';
+            ctx.fill();
+            ctx.fillStyle = '#a57254';
+            ctx.fillRect(-3, 0, 6, umbrella.handleLength-5);
+
+            ctx.beginPath();
+            ctx.arc(0, -8, 8, 0, Math.PI*2);
+            ctx.fillStyle = '#c9a87b';
+            ctx.fill();
+
+            const w = umbrella.width;
+            const h = umbrella.heightArc;
+            ctx.beginPath();
+            ctx.ellipse(0, -38, w/2, h, 0, Math.PI, 0, true);
+            let grad = ctx.createLinearGradient(-w/3, -48, w/3, -20);
+            grad.addColorStop(0, '#40445e');
+            grad.addColorStop(0.5, '#2f334b');
+            grad.addColorStop(1, '#3a3e5a');
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.ellipse(0, -38, w/2 + 2, h+2, 0, Math.PI, 0, true);
+            ctx.strokeStyle = '#e8dbaa';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawRaindrops() {
+            for(let d of drops) {
+                ctx.beginPath();
+                if (d.state === 'falling') {
+                    ctx.fillStyle = '#b7e2ff';
+                    ctx.ellipse(d.x, d.y, d.size*0.6, d.size*0.9, 0, 0, Math.PI*2);
+                    ctx.fill();
+                } else if (d.state === 'sliding') {
+                    ctx.fillStyle = '#c0e4ff';
+                    ctx.ellipse(d.x, d.y, d.size*0.7, d.size*0.6, 0, 0, Math.PI*2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        function drawGroundAndRipples() {
+            let gradGround = ctx.createLinearGradient(0, GROUND_Y-15, 0, height);
+            gradGround.addColorStop(0, '#1b273d');
+            gradGround.addColorStop(1, '#121a2a');
+            ctx.fillStyle = gradGround;
+            ctx.fillRect(0, GROUND_Y-8, width, height-GROUND_Y+8);
+
+            for(let r of ripples) {
+                ctx.beginPath();
+                ctx.ellipse(r.x, r.y, r.radius, r.radius*0.5, 0, 0, Math.PI*2);
+                ctx.strokeStyle = `rgba(180, 225, 255, ${r.alpha * 0.8})`;
+                ctx.lineWidth = 1.8;
+                ctx.stroke();
+            }
+        }
+
+        function animate() {
+            updateRain();
+            drawBackground();
+            drawUmbrella();
+            drawRaindrops();
+            drawGroundAndRipples();
+            requestAnimationFrame(animate);
+        }
+
+        function handleMouseMove(e) {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = Math.min(width, Math.max(0, (e.clientX - rect.left) * (width / rect.width)));
+        }
+        canvas.addEventListener('mousemove', handleMouseMove);
+
+        function init() {
+            for(let i=0;i<80;i++) spawnRaindrop();
+            for(let i=0;i<8;i++) addRipple(Math.random()*width, GROUND_Y-2, 0.5);
+            animate();
+        }
+        init();
+    })();
+</script>
+</body>
+</html>

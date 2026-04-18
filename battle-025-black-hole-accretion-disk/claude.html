@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Black Hole Accretion Disk</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100vw; height: 100vh; overflow: hidden; background: #000; }
+canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let vpw = window.innerWidth, vph = window.innerHeight, dpr = 1;
+function syncViewport() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  vpw = window.innerWidth;
+  vph = window.innerHeight;
+  canvas.width = Math.max(1, Math.floor(vpw * dpr));
+  canvas.height = Math.max(1, Math.floor(vph * dpr));
+}
+syncViewport();
+window.addEventListener('resize', syncViewport);
+
+const W = 540, H = 960;
+const CX = W / 2, CY = H / 2;
+const BH_RADIUS = 38;
+const EVENT_HORIZON = 50;
+const LENSING_RADIUS = 140;
+const DISK_INNER = 65;
+const DISK_OUTER = 250;
+const NUM_PARTICLES = 600;
+const particles = [];
+const NUM_STARS = 300;
+const stars = [];
+const NUM_LENSED = 80;
+const lensedStars = [];
+const NUM_JET = 60;
+const jets = [];
+
+function initStars() {
+  for (let i = 0; i < NUM_STARS; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      size: Math.random() * 1.8 + 0.3,
+      brightness: Math.random() * 0.6 + 0.2,
+      twinkleSpeed: Math.random() * 3 + 1,
+      twinkleOffset: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function initLensedStars() {
+  for (let i = 0; i < NUM_LENSED; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = LENSING_RADIUS * 0.6 + Math.random() * LENSING_RADIUS * 0.8;
+    lensedStars.push({
+      baseAngle: angle,
+      baseDist: dist,
+      size: Math.random() * 1.5 + 0.5,
+      brightness: Math.random() * 0.5 + 0.3,
+      speed: (Math.random() * 0.1 + 0.02) * (Math.random() > 0.5 ? 1 : -1)
+    });
+  }
+}
+
+function initParticle(p, forceOuter) {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = forceOuter
+    ? DISK_OUTER * (0.8 + Math.random() * 0.4)
+    : DISK_INNER + Math.random() * (DISK_OUTER - DISK_INNER);
+
+  p.angle = angle;
+  p.dist = dist;
+  p.speed = (800 / (dist * dist)) * 60 + Math.random() * 0.3;
+  p.spiralRate = 0.15 + Math.random() * 0.3;
+  p.size = Math.random() * 2.5 + 0.8;
+  p.brightness = Math.random() * 0.5 + 0.5;
+  p.layer = Math.random();
+  p.wobble = Math.random() * Math.PI * 2;
+  p.wobbleAmp = Math.random() * 8 + 2;
+  p.wobbleSpeed = Math.random() * 2 + 0.5;
+  p.life = 1;
+}
+
+function initParticles() {
+  for (let i = 0; i < NUM_PARTICLES; i++) {
+    const p = {};
+    initParticle(p, false);
+    particles.push(p);
+  }
+}
+
+function initJets() {
+  for (let i = 0; i < NUM_JET; i++) {
+    const dir = i < NUM_JET / 2 ? -1 : 1;
+    jets.push({
+      angle: Math.random() * Math.PI * 2,
+      dist: Math.random() * 300,
+      speed: 80 + Math.random() * 120,
+      size: Math.random() * 2 + 1,
+      life: Math.random(),
+      dir: dir,
+      spread: (Math.random() - 0.5) * 0.3
+    });
+  }
+}
+
+function getParticleColor(dist, brightness) {
+  const t = (dist - DISK_INNER) / (DISK_OUTER - DISK_INNER);
+  let r, g, b;
+  if (t < 0.15) {
+    r = 255; g = 255; b = 240;
+  } else if (t < 0.35) {
+    const s = (t - 0.15) / 0.2;
+    r = 255; g = lerp(255, 180, s); b = lerp(240, 60, s);
+  } else if (t < 0.6) {
+    const s = (t - 0.35) / 0.25;
+    r = lerp(255, 255, s); g = lerp(180, 100, s); b = lerp(60, 20, s);
+  } else if (t < 0.8) {
+    const s = (t - 0.6) / 0.2;
+    r = lerp(255, 180, s); g = lerp(100, 40, s); b = lerp(20, 30, s);
+  } else {
+    const s = (t - 0.8) / 0.2;
+    r = lerp(180, 80, s); g = lerp(40, 15, s); b = lerp(30, 40, s);
+  }
+  return `rgba(${Math.floor(r)},${Math.floor(g)},${Math.floor(b)},${brightness})`;
+}
+
+function lerp(a, b, t) { return a + (b - a) * Math.max(0, Math.min(1, t)); }
+
+let time = 0;
+initStars();
+initLensedStars();
+initParticles();
+initJets();
+
+function drawBackground() {
+  // Deep space gradient
+  const bg = ctx.createRadialGradient(CX, CY, 0, CX, CY, H * 0.7);
+  bg.addColorStop(0, '#030308');
+  bg.addColorStop(0.5, '#020206');
+  bg.addColorStop(1, '#010103');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (let s of stars) {
+    const twinkle = Math.sin(time * s.twinkleSpeed + s.twinkleOffset) * 0.3 + 0.7;
+    const alpha = s.brightness * twinkle;
+
+    // Check if star is behind black hole (gravitational lensing)
+    const dx = s.x - CX, dy = s.y - CY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < EVENT_HORIZON) continue; // Absorbed
+
+    let drawX = s.x, drawY = s.y, drawSize = s.size, drawAlpha = alpha;
+
+    if (dist < LENSING_RADIUS) {
+      // Gravitational lensing: bend star position outward
+      const lensT = 1 - (dist - EVENT_HORIZON) / (LENSING_RADIUS - EVENT_HORIZON);
+      const bendFactor = lensT * lensT * 30;
+      const angle = Math.atan2(dy, dx);
+      drawX = s.x + Math.cos(angle) * bendFactor;
+      drawY = s.y + Math.sin(angle) * bendFactor;
+      drawSize *= 1 + lensT * 1.5;
+      drawAlpha *= (1 - lensT * 0.7);
+
+      // Einstein ring contribution
+      if (lensT > 0.5) {
+        ctx.fillStyle = `rgba(200,220,255,${(lensT - 0.5) * 0.15})`;
+        ctx.beginPath();
+        ctx.arc(drawX, drawY, drawSize * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.fillStyle = `rgba(220,230,255,${drawAlpha})`;
+    ctx.beginPath();
+    ctx.arc(drawX, drawY, drawSize, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawEinsteinRing() {
+  // Photon ring / Einstein ring
+  for (let i = 0; i < 3; i++) {
+    const radius = EVENT_HORIZON + 5 + i * 4;
+    const alpha = 0.08 - i * 0.02;
+    ctx.strokeStyle = `rgba(200,180,255,${alpha})`;
+    ctx.lineWidth = 2 - i * 0.5;
+    ctx.beginPath();
+    ctx.arc(CX, CY, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Lensed arc distortions
+  for (let s of lensedStars) {
+    const angle = s.baseAngle + time * s.speed;
+    const distortion = Math.sin(time * 1.5 + s.baseAngle * 3) * 10;
+    const dist = LENSING_RADIUS * 0.45 + distortion;
+    const x = CX + Math.cos(angle) * dist;
+    const y = CY + Math.sin(angle) * dist * 0.35; // Flatten for disk perspective
+    ctx.fillStyle = `rgba(180,200,255,${s.brightness * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(x, y, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawAccretionDisk(layer) {
+  // Draw particles in the given layer (0 = behind, 1 = front)
+  for (let p of particles) {
+    const behind = Math.sin(p.angle) > 0;
+    if (layer === 0 && !behind) continue;
+    if (layer === 1 && behind) continue;
+
+    // 3D projection: tilt the disk
+    const tiltAngle = 0.3;
+    const x3d = Math.cos(p.angle) * p.dist;
+    const z3d = Math.sin(p.angle) * p.dist;
+    const y3d = Math.sin(p.wobble) * p.wobbleAmp * (p.dist / DISK_OUTER);
+
+    const yProj = z3d * Math.sin(tiltAngle) + y3d * Math.cos(tiltAngle);
+    const depth = z3d * Math.cos(tiltAngle) - y3d * Math.sin(tiltAngle);
+
+    const screenX = CX + x3d;
+    const screenY = CY + yProj;
+
+    // Doppler beaming: brighter approaching side
+    const doppler = 1 + Math.cos(p.angle) * 0.4;
+    const depthFade = behind ? 0.4 : 1.0;
+    const finalBrightness = p.brightness * p.life * doppler * depthFade;
+    const color = getParticleColor(p.dist, finalBrightness);
+
+    // Glow
+    if (p.dist < DISK_INNER + 40 && finalBrightness > 0.3) {
+      const glowSize = p.size * 4;
+      const glow = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, glowSize);
+      glow.addColorStop(0, `rgba(255,200,100,${finalBrightness * 0.3})`);
+      glow.addColorStop(1, 'rgba(255,100,20,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, glowSize, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, p.size * (behind ? 0.7 : 1), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawDiskGlow() {
+  // Overall disk glow - elliptical
+  ctx.save();
+  ctx.translate(CX, CY);
+
+  // Outer warm glow
+  const outerGlow = ctx.createRadialGradient(0, 0, DISK_INNER, 0, 0, DISK_OUTER * 1.2);
+  outerGlow.addColorStop(0, 'rgba(255,150,50,0.06)');
+  outerGlow.addColorStop(0.4, 'rgba(255,80,20,0.03)');
+  outerGlow.addColorStop(1, 'rgba(100,20,10,0)');
+  ctx.fillStyle = outerGlow;
+  ctx.save();
+  ctx.scale(1, 0.35);
+  ctx.beginPath();
+  ctx.arc(0, 0, DISK_OUTER * 1.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Inner hot glow
+  const innerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, DISK_INNER + 30);
+  innerGlow.addColorStop(0, 'rgba(255,240,220,0.1)');
+  innerGlow.addColorStop(0.5, 'rgba(255,180,80,0.05)');
+  innerGlow.addColorStop(1, 'rgba(255,100,30,0)');
+  ctx.fillStyle = innerGlow;
+  ctx.save();
+  ctx.scale(1, 0.35);
+  ctx.beginPath();
+  ctx.arc(0, 0, DISK_INNER + 30, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawBlackHole() {
+  // Black hole shadow
+  const shadow = ctx.createRadialGradient(CX, CY, BH_RADIUS * 0.5, CX, CY, EVENT_HORIZON + 20);
+  shadow.addColorStop(0, 'rgba(0,0,0,1)');
+  shadow.addColorStop(0.6, 'rgba(0,0,0,1)');
+  shadow.addColorStop(0.85, 'rgba(0,0,0,0.95)');
+  shadow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = shadow;
+  ctx.beginPath();
+  ctx.arc(CX, CY, EVENT_HORIZON + 20, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Core void
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.arc(CX, CY, BH_RADIUS, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Photon sphere glow
+  const photonPulse = Math.sin(time * 2) * 0.02 + 0.06;
+  const photon = ctx.createRadialGradient(CX, CY, BH_RADIUS - 2, CX, CY, BH_RADIUS + 12);
+  photon.addColorStop(0, `rgba(180,160,255,${photonPulse})`);
+  photon.addColorStop(0.5, `rgba(140,120,255,${photonPulse * 0.5})`);
+  photon.addColorStop(1, 'rgba(100,80,200,0)');
+  ctx.fillStyle = photon;
+  ctx.beginPath();
+  ctx.arc(CX, CY, BH_RADIUS + 12, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Bright edge ring
+  ctx.strokeStyle = `rgba(200,180,255,${0.15 + Math.sin(time * 3) * 0.05})`;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(CX, CY, BH_RADIUS + 1, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawJets() {
+  for (let j of jets) {
+    const x = CX + Math.cos(j.angle) * 3 + j.spread * j.dist * 0.3;
+    const y = CY + j.dir * j.dist;
+    const alpha = j.life * 0.3 * (1 - j.dist / 300);
+
+    if (alpha <= 0) continue;
+    const jg = ctx.createRadialGradient(x, y, 0, x, y, j.size * 3);
+    jg.addColorStop(0, `rgba(150,180,255,${alpha})`);
+    jg.addColorStop(0.5, `rgba(100,120,255,${alpha * 0.4})`);
+    jg.addColorStop(1, 'rgba(60,80,200,0)');
+    ctx.fillStyle = jg;
+    ctx.beginPath();
+    ctx.arc(x, y, j.size * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawLensingDistortion() {
+  // Gravitational lensing ring effect
+  const numArcs = 12;
+  for (let i = 0; i < numArcs; i++) {
+    const baseAngle = (i / numArcs) * Math.PI * 2 + time * 0.15;
+    const wobble = Math.sin(time * 0.8 + i * 1.5) * 8;
+    const radius = LENSING_RADIUS * 0.55 + wobble;
+    const arcLen = Math.PI * 0.3 + Math.sin(time + i) * 0.1;
+    ctx.strokeStyle = `rgba(180,200,255,${0.04 + Math.sin(time * 1.2 + i) * 0.02})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(CX, CY, radius, baseAngle, baseAngle + arcLen);
+    ctx.stroke();
+  }
+}
+
+function updateParticles(dt) {
+  for (let p of particles) {
+    // Orbital speed increases as particles spiral in (Kepler)
+    const speedMult = Math.pow(DISK_OUTER / Math.max(p.dist, DISK_INNER * 0.5), 1.5);
+    p.angle += p.speed * speedMult * dt;
+    p.dist -= p.spiralRate * dt * (DISK_OUTER / p.dist) * 0.5;
+    p.wobble += p.wobbleSpeed * dt;
+
+    // Fade as approaching event horizon
+    if (p.dist < DISK_INNER + 15) {
+      p.life = (p.dist - EVENT_HORIZON) / (DISK_INNER + 15 - EVENT_HORIZON);
+    }
+
+    // Reset if consumed
+    if (p.dist <= EVENT_HORIZON || p.life <= 0) {
+      initParticle(p, true);
+    }
+  }
+
+  // Jets
+  for (let j of jets) {
+    j.dist += j.speed * dt;
+    j.angle += 0.5 * dt;
+    j.life -= dt * 0.3;
+    if (j.dist > 300 || j.life <= 0) {
+      j.dist = Math.random() * 20;
+      j.life = 1;
+      j.angle = Math.random() * Math.PI * 2;
+      j.speed = 80 + Math.random() * 120;
+    }
+  }
+}
+
+let lastTime = 0;
+function render(timestamp) {
+  if (!lastTime) lastTime = timestamp;
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+  time += dt;
+
+  updateParticles(dt);
+
+  ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+
+  // Clear
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  drawBackground();
+  drawLensingDistortion();
+  drawEinsteinRing();
+
+  // Back layer of disk
+  drawDiskGlow();
+  drawAccretionDisk(0);
+
+  // Jets behind black hole center
+  drawJets();
+
+  // Black hole core
+  drawBlackHole();
+
+  // Front layer of disk
+  drawAccretionDisk(1);
+
+  // Top ambient glow
+  const ambientPulse = Math.sin(time * 0.5) * 0.01 + 0.03;
+  const ambient = ctx.createRadialGradient(CX, CY, 30, CX, CY, DISK_OUTER);
+  ambient.addColorStop(0, `rgba(255,200,120,${ambientPulse})`);
+  ambient.addColorStop(1, 'rgba(255,100,20,0)');
+  ctx.fillStyle = ambient;
+  ctx.beginPath();
+  ctx.arc(CX, CY, DISK_OUTER, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Vignette
+  const vg = ctx.createRadialGradient(CX, CY, H * 0.25, CX, CY, H * 0.65);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.6)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

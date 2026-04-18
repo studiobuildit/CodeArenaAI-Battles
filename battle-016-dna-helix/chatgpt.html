@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>3D DNA Helix</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: black;
+  }
+  canvas {
+    width: 100vw;
+    height: 100vh;
+    display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+const W = 540;
+const H = 960;
+
+let dpr = window.devicePixelRatio || 1;
+let vpw = 0, vph = 0;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  vpw = window.innerWidth;
+  vph = window.innerHeight;
+  canvas.width = vpw * dpr;
+  canvas.height = vph * dpr;
+}
+window.addEventListener("resize", resize);
+resize();
+
+const CENTER_X = W / 2;
+const CENTER_Y = H / 2;
+const HEIGHT = 600;
+const POINTS = 120;
+const RADIUS = 120;
+const DEPTH = 300;
+
+let t = 0;
+
+function project(x, y, z) {
+  const scale = DEPTH / (DEPTH + z);
+  return {
+    x: CENTER_X + x * scale,
+    y: CENTER_Y + y * scale,
+    scale
+  };
+}
+
+function draw() {
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, W, H);
+
+  const strands = [];
+
+  for (let i = 0; i < POINTS; i++) {
+    const p = i / POINTS;
+    const y = (p - 0.5) * HEIGHT;
+
+    const angle = p * Math.PI * 10 + t;
+
+    const x1 = Math.cos(angle) * RADIUS;
+    const z1 = Math.sin(angle) * RADIUS;
+
+    const x2 = Math.cos(angle + Math.PI) * RADIUS;
+    const z2 = Math.sin(angle + Math.PI) * RADIUS;
+
+    strands.push({
+      a: project(x1, y, z1),
+      b: project(x2, y, z2),
+      depth: z1 + z2
+    });
+  }
+
+  strands.sort((a, b) => a.depth - b.depth);
+
+  strands.forEach(s => {
+    const alpha = 0.4 + s.a.scale * 0.6;
+
+    ctx.strokeStyle = `rgba(255,255,255,${alpha * 0.4})`;
+    ctx.lineWidth = 2 * s.a.scale;
+    ctx.beginPath();
+    ctx.moveTo(s.a.x, s.a.y);
+    ctx.lineTo(s.b.x, s.b.y);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(s.a.x, s.a.y, 6 * s.a.scale, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0,150,255,${alpha})`;
+    ctx.shadowBlur = 10 * s.a.scale;
+    ctx.shadowColor = "rgba(0,150,255,0.8)";
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(s.b.x, s.b.y, 6 * s.b.scale, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,80,80,${alpha})`;
+    ctx.shadowBlur = 10 * s.b.scale;
+    ctx.shadowColor = "rgba(255,80,80,0.8)";
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+  });
+}
+
+function animate() {
+  t += 0.02;
+
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  ctx.setTransform((vpw/W)*dpr, 0, 0, (vph/H)*dpr, 0, 0);
+
+  draw();
+
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>

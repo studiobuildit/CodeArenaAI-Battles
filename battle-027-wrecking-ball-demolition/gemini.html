@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Wrecking Ball Simulation — Gemini</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            overflow: hidden;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #simCanvas {
+            display: block;
+            touch-action: none;
+            image-rendering: auto;
+            max-width: 100%;
+            max-height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="simCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+        
+        let bricks = [];
+        let particles = [];
+        let frame = 0;
+        let resetTimer = 0;
+
+        const gravity = 0.25;
+        const friction = 0.98;
+        const brickW = 40;
+        const brickH = 20;
+
+        const crane = {
+            anchorX: W / 2 - 100,
+            anchorY: 50,
+            length: 450,
+            angle: Math.PI / 4,
+            angleVel: 0,
+            ballX: 0,
+            ballY: 0,
+            radius: 35
+        };
+
+        function initBuilding() {
+            bricks = [];
+            particles = [];
+            const cols = 6;
+            const rows = 25;
+            const startX = W - 250;
+            const startY = H - 50;
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    bricks.push({
+                        x: startX + c * (brickW + 2),
+                        y: startY - r * (brickH + 2),
+                        vx: 0,
+                        vy: 0,
+                        active: true,
+                        isStatic: true,
+                        color: `hsl(15, ${20 + Math.random() * 20}%, ${30 + Math.random() * 20}%)`
+                    });
+                }
+            }
+        }
+
+        function createDust(x, y) {
+            for (let i = 0; i < 5; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                    life: 1.0,
+                    size: 5 + Math.random() * 10
+                });
+            }
+        }
+
+        function resize() {
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const scale = Math.min(vw / W, vh / H);
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const cssW = W * scale;
+            const cssH = H * scale;
+            canvas.style.setProperty('width', cssW + 'px', 'important');
+            canvas.style.setProperty('height', cssH + 'px', 'important');
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+            ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+            ctx.imageSmoothingEnabled = true;
+        }
+
+        window.addEventListener('resize', resize);
+        window.addEventListener('load', () => {
+            resize();
+            requestAnimationFrame(resize);
+        });
+        resize();
+
+        function update() {
+            const accel = (-1 * gravity / crane.length) * Math.sin(crane.angle);
+            crane.angleVel += accel;
+            crane.angleVel *= 0.995;
+            crane.angle += crane.angleVel;
+
+            crane.ballX = crane.anchorX + Math.sin(crane.angle) * crane.length;
+            crane.ballY = crane.anchorY + Math.cos(crane.angle) * crane.length;
+
+            let activeCount = 0;
+            bricks.forEach(b => {
+                if (!b.active) return;
+                activeCount++;
+
+                const dx = b.x + brickW/2 - crane.ballX;
+                const dy = b.y + brickH/2 - crane.ballY;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+
+                if (dist < crane.radius + 15) {
+                    b.isStatic = false;
+                    b.vx = crane.angleVel * 150 + (Math.random() - 0.5) * 5;
+                    b.vy = -Math.abs(crane.angleVel * 50);
+                    createDust(b.x, b.y);
+                }
+
+                if (!b.isStatic) {
+                    b.vy += gravity;
+                    b.vx *= friction;
+                    b.vy *= friction;
+                    b.x += b.vx;
+                    b.y += b.vy;
+
+                    if (b.y > H - brickH - 20) {
+                        b.y = H - brickH - 20;
+                        b.vy *= -0.3;
+                        b.vx *= 0.8;
+                    }
+                }
+            });
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 0.02;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            if (activeCount < 10 || (Math.abs(crane.angleVel) < 0.001 && crane.angle < 0)) {
+                resetTimer++;
+                if (resetTimer > 180) {
+                    initBuilding();
+                    resetTimer = 0;
+                }
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.fillStyle = '#111';
+            ctx.fillRect(0, H - 20, W, 20);
+
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(crane.anchorX - 40, 0);
+            ctx.lineTo(crane.anchorX, crane.anchorY);
+            ctx.stroke();
+
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(crane.anchorX, crane.anchorY);
+            ctx.lineTo(crane.ballX, crane.ballY);
+            ctx.stroke();
+
+            const grad = ctx.createRadialGradient(crane.ballX - 10, crane.ballY - 10, 5, crane.ballX, crane.ballY, crane.radius);
+            grad.addColorStop(0, '#777');
+            grad.addColorStop(1, '#222');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(crane.ballX, crane.ballY, crane.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            bricks.forEach(b => {
+                if (!b.active) return;
+                ctx.fillStyle = b.color;
+                ctx.fillRect(b.x, b.y, brickW, brickH);
+                ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+                ctx.strokeRect(b.x, b.y, brickW, brickH);
+            });
+
+            particles.forEach(p => {
+                ctx.fillStyle = `rgba(100, 100, 100, ${p.life})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            ctx.fillStyle = '#444';
+            ctx.font = '14px monospace';
+            ctx.fillText('DEMOLITION IN PROGRESS', 20, H - 40);
+        }
+
+        function loop() {
+            frame++;
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        initBuilding();
+        loop();
+    </script>
+</body>
+</html>

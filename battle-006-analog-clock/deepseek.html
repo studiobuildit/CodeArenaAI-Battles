@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Analog Clock | Smooth Sweeping Real Time</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body {
+            background: radial-gradient(circle at 30% 20%, #121826, #05070c);
+            min-height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            width: 100vw;
+            height: 100vh;
+            border-radius: 50%;
+            box-shadow: 0 25px 45px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(80, 140, 200, 0.2);
+            transition: box-shadow 0.3s ease;
+        }
+        canvas:hover {
+            box-shadow: 0 30px 55px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(100, 180, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+<canvas id="analogClockCanvas"></canvas>
+
+<script>
+    (function() {
+        const canvas = document.getElementById('analogClockCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const size = 600;
+        const centerX = size / 2;
+        const centerY = size / 2;
+        const radius = size * 0.42;
+
+        let vpw = Math.max(1, window.innerWidth);
+        let vph = Math.max(1, window.innerHeight);
+        let dpr = 1;
+
+        function syncViewport() {
+            dpr = Math.max(1, window.devicePixelRatio || 1);
+            vpw = Math.max(1, window.innerWidth);
+            vph = Math.max(1, window.innerHeight);
+            canvas.width = Math.floor(vpw * dpr);
+            canvas.height = Math.floor(vph * dpr);
+        }
+
+        function beginFrame() {
+            syncViewport();
+            ctx.setTransform((vpw / size) * dpr, 0, 0, (vph / size) * dpr, 0, 0);
+        }
+
+        function setShadow(blur, color = "rgba(0,0,0,0.35)") {
+            ctx.shadowBlur = blur;
+            ctx.shadowColor = color;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
+        }
+
+        function clearShadow() {
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+        }
+
+        function drawClockFace() {
+            const grad = ctx.createRadialGradient(centerX - 15, centerY - 15, 20, centerX, centerY, radius + 18);
+            grad.addColorStop(0, '#141c28');
+            grad.addColorStop(0.7, '#0a0f18');
+            grad.addColorStop(1, '#03060c');
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius + 10, 0, Math.PI * 2);
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#0e141f';
+            ctx.fill();
+            ctx.strokeStyle = '#2a3a50';
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius - 8, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(70, 130, 200, 0.25)';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 7, 0, Math.PI * 2);
+            ctx.fillStyle = '#1e2e42';
+            ctx.fill();
+        }
+
+        function drawMarkers() {
+            for (let i = 1; i <= 12; i++) {
+                let angle = (i * 30 - 90) * Math.PI / 180;
+                let outerX = centerX + Math.cos(angle) * (radius - 12);
+                let outerY = centerY + Math.sin(angle) * (radius - 12);
+                let innerX = centerX + Math.cos(angle) * (radius - 32);
+                let innerY = centerY + Math.sin(angle) * (radius - 32);
+
+                ctx.beginPath();
+                ctx.moveTo(outerX, outerY);
+                ctx.lineTo(innerX, innerY);
+                ctx.lineWidth = (i % 3 === 0) ? 3.5 : 2.2;
+                ctx.strokeStyle = (i % 3 === 0) ? '#bbd4ff' : '#6a85a5';
+                ctx.shadowBlur = (i % 3 === 0) ? 6 : 2;
+                ctx.shadowColor = (i % 3 === 0) ? 'rgba(80, 160, 255, 0.6)' : 'rgba(0,0,0,0.3)';
+                ctx.stroke();
+            }
+
+            for (let i = 0; i < 60; i++) {
+                if (i % 5 === 0) continue;
+                let angle = (i * 6 - 90) * Math.PI / 180;
+                let outerX = centerX + Math.cos(angle) * (radius - 8);
+                let outerY = centerY + Math.sin(angle) * (radius - 8);
+                let innerX = centerX + Math.cos(angle) * (radius - 18);
+                let innerY = centerY + Math.sin(angle) * (radius - 18);
+                ctx.beginPath();
+                ctx.moveTo(outerX, outerY);
+                ctx.lineTo(innerX, innerY);
+                ctx.lineWidth = 1.2;
+                ctx.strokeStyle = '#3e5570';
+                ctx.shadowBlur = 1;
+                ctx.stroke();
+            }
+
+            clearShadow();
+
+            ctx.font = `500 ${Math.floor(radius * 0.1)}px "Segoe UI", "Inter", system-ui`;
+            ctx.fillStyle = '#cde2ff';
+            ctx.shadowBlur = 0;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            const numeralRadius = radius - 38;
+            const numerals = [
+                { num: "12", angle: -90 },
+                { num: "3", angle: 0 },
+                { num: "6", angle: 90 },
+                { num: "9", angle: 180 }
+            ];
+            numerals.forEach(n => {
+                let rad = (n.angle * Math.PI / 180);
+                let x = centerX + Math.cos(rad) * numeralRadius;
+                let y = centerY + Math.sin(rad) * numeralRadius;
+                ctx.fillStyle = '#cce4ff';
+                ctx.fillText(n.num, x, y);
+            });
+        }
+
+        function drawHands(now) {
+            const hours = now.getHours() % 12;
+            const minutes = now.getMinutes();
+            const seconds = now.getSeconds();
+            const milliseconds = now.getMilliseconds();
+
+            const secondAngle = ((seconds + milliseconds / 1000) * 6 - 90) * Math.PI / 180;
+            const minuteAngle = ((minutes + seconds / 60) * 6 - 90) * Math.PI / 180;
+            const hourAngle = ((hours + minutes / 60) * 30 - 90) * Math.PI / 180;
+
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            const hourLen = radius * 0.52;
+            const hourX = centerX + Math.cos(hourAngle) * hourLen;
+            const hourY = centerY + Math.sin(hourAngle) * hourLen;
+            ctx.lineTo(hourX, hourY);
+            ctx.lineWidth = 5.5;
+            ctx.lineCap = 'round';
+            setShadow(7, "rgba(0,0,0,0.45)");
+            ctx.strokeStyle = '#eaf4ff';
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            const minuteLen = radius * 0.68;
+            const minuteX = centerX + Math.cos(minuteAngle) * minuteLen;
+            const minuteY = centerY + Math.sin(minuteAngle) * minuteLen;
+            ctx.lineTo(minuteX, minuteY);
+            ctx.lineWidth = 3.8;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            const secondLen = radius * 0.74;
+            const secondX = centerX + Math.cos(secondAngle) * secondLen;
+            const secondY = centerY + Math.sin(secondAngle) * secondLen;
+            ctx.lineTo(secondX, secondY);
+            ctx.lineWidth = 1.8;
+            ctx.strokeStyle = '#ff6a4a';
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = "rgba(255, 80, 40, 0.5)";
+            ctx.stroke();
+
+            ctx.beginPath();
+            const backLen = radius * 0.12;
+            const backX = centerX - Math.cos(secondAngle) * backLen;
+            const backY = centerY - Math.sin(secondAngle) * backLen;
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(backX, backY);
+            ctx.lineWidth = 1.8;
+            ctx.strokeStyle = '#ff8866';
+            ctx.stroke();
+
+            clearShadow();
+
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 9, 0, Math.PI * 2);
+            ctx.fillStyle = '#1f2c3c';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#bfd9ff';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 2.2, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+        }
+
+        function drawGlowRing() {
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius + 5, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(80, 160, 240, 0.2)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius - 2, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(120, 180, 255, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        function renderClock() {
+            beginFrame();
+            const now = new Date();
+
+            ctx.clearRect(0, 0, size, size);
+
+            drawClockFace();
+            drawMarkers();
+            drawHands(now);
+            drawGlowRing();
+
+            ctx.beginPath();
+            ctx.ellipse(centerX - 22, centerY - 28, 45, 28, 0, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+            ctx.fill();
+
+            requestAnimationFrame(renderClock);
+        }
+
+        syncViewport();
+        window.addEventListener('resize', syncViewport);
+        renderClock();
+    })();
+</script>
+</body>
+</html>

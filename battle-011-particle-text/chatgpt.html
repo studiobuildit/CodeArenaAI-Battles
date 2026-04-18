@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AI Particle Formation</title>
+<style>
+  body {
+    margin: 0;
+    background: black;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+  canvas {
+    width: 400px;
+    height: 400px;
+    display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="c" width="400" height="400"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+const W = 400, H = 400;
+const particles = [];
+const MAX = 2500;
+
+let phase = 0; // 0 scatter, 1 assemble, 2 float
+let timer = 0;
+
+function getTextPoints() {
+  const off = document.createElement("canvas");
+  off.width = W;
+  off.height = H;
+  const octx = off.getContext("2d");
+
+  octx.fillStyle = "white";
+  octx.font = "bold 140px Arial";
+  octx.textAlign = "center";
+  octx.textBaseline = "middle";
+  octx.fillText("AI", W/2, H/2);
+
+  const data = octx.getImageData(0, 0, W, H).data;
+  const points = [];
+
+  for (let y = 0; y < H; y += 3) {
+    for (let x = 0; x < W; x += 3) {
+      const i = (y * W + x) * 4;
+      if (data[i] > 200) {
+        points.push({x, y});
+      }
+    }
+  }
+
+  return points;
+}
+
+const targets = getTextPoints();
+
+function createParticles() {
+  for (let i = 0; i < targets.length; i++) {
+    particles.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      tx: targets[i].x,
+      ty: targets[i].y,
+      vx: (Math.random() - 0.5) * 6,
+      vy: (Math.random() - 0.5) * 6,
+      size: 1 + Math.random() * 1.5
+    });
+  }
+}
+
+createParticles();
+
+function update() {
+  timer++;
+
+  if (timer < 80) phase = 0;
+  else if (timer < 200) phase = 1;
+  else phase = 2;
+
+  particles.forEach(p => {
+    if (phase === 0) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.98;
+      p.vy *= 0.98;
+    } 
+    else if (phase === 1) {
+      const dx = p.tx - p.x;
+      const dy = p.ty - p.y;
+
+      p.x += dx * 0.08;
+      p.y += dy * 0.08;
+    } 
+    else {
+      p.x += Math.sin((p.tx + timer) * 0.02) * 0.2;
+      p.y += Math.cos((p.ty + timer) * 0.02) * 0.2;
+    }
+  });
+
+  if (timer > 400) {
+    timer = 0;
+    particles.forEach(p => {
+      p.x = Math.random() * W;
+      p.y = Math.random() * H;
+      p.vx = (Math.random() - 0.5) * 6;
+      p.vy = (Math.random() - 0.5) * 6;
+    });
+  }
+}
+
+function draw() {
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.fillRect(0, 0, W, H);
+
+  particles.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = "white";
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  });
+}
+
+function animate() {
+  update();
+  draw();
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lava Lamp</title>
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #000;
+}
+canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const W = 540, H = 960;
+let dpr = window.devicePixelRatio || 1;
+let vpw = window.innerWidth;
+let vph = window.innerHeight;
+
+function resize() {
+    dpr = window.devicePixelRatio || 1;
+    vpw = window.innerWidth;
+    vph = window.innerHeight;
+    canvas.width = Math.floor(vpw * dpr);
+    canvas.height = Math.floor(vph * dpr);
+}
+
+window.addEventListener('resize', resize);
+resize();
+
+const blobs = [];
+const numBlobs = 10;
+const lampX = W / 2;
+const lampY = H / 2;
+const lampW = 260;
+const lampH = 560;
+
+const colors = [
+    { r: 255, g: 80, b: 0 },
+    { r: 255, g: 40, b: 0 },
+    { r: 255, g: 120, b: 20 },
+    { r: 220, g: 20, b: 0 },
+    { r: 255, g: 160, b: 40 }
+];
+
+class Blob {
+    constructor() {
+        this.reset();
+        this.y = lampY - lampH/2 + Math.random() * lampH;
+    }
+    
+    reset() {
+        this.x = lampX + (Math.random() - 0.5) * lampW * 0.5;
+        this.y = lampY + lampH/2 - 40;
+        this.radius = 35 + Math.random() * 35;
+        this.vx = (Math.random() - 0.5) * 0.2;
+        this.vy = -0.4 - Math.random() * 0.3;
+        this.color = colors[Math.floor(Math.random() * colors.length)];
+        this.phase = Math.random() * Math.PI * 2;
+        this.morphSpeed = 0.015 + Math.random() * 0.015;
+        this.points = [];
+        this.numPoints = 10;
+        for (let i = 0; i < this.numPoints; i++) {
+            this.points.push(1 + Math.random() * 0.2);
+        }
+    }
+    
+    update() {
+        this.phase += this.morphSpeed;
+        this.x += this.vx;
+        this.y += this.vy;
+        
+        for (let i = 0; i < this.numPoints; i++) {
+            this.points[i] += Math.sin(this.phase + i * 0.7) * 0.012;
+            this.points[i] = Math.max(0.75, Math.min(1.25, this.points[i]));
+        }
+        
+        const normalizedY = (this.y - (lampY - lampH/2)) / lampH;
+        this.vy += (0.5 - normalizedY) * 0.006;
+        this.vx += (lampX - this.x) * 0.00015;
+        this.vx *= 0.985;
+        
+        const leftBound = lampX - lampW/2 + this.radius;
+        const rightBound = lampX + lampW/2 - this.radius;
+        const topBound = lampY - lampH/2 + this.radius + 20;
+        const bottomBound = lampY + lampH/2 - this.radius - 20;
+        
+        if (this.x < leftBound) { this.x = leftBound; this.vx *= -0.5; }
+        if (this.x > rightBound) { this.x = rightBound; this.vx *= -0.5; }
+        if (this.y < topBound) { this.y = topBound; this.vy = Math.abs(this.vy) * 0.25; }
+        if (this.y > bottomBound) { this.y = bottomBound; this.vy = -Math.abs(this.vy) * 0.4; }
+        
+        if (this.y > bottomBound - 40 && Math.abs(this.vy) < 0.15) {
+            this.vy = -0.6 - Math.random() * 0.4;
+        }
+    }
+    
+    draw() {
+        ctx.globalCompositeOperation = 'screen';
+        const { r, g, b } = this.color;
+        
+        const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 1.8);
+        grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.7)`);
+        grad.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, 0.25)`);
+        grad.addColorStop(1, 'transparent');
+        
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 1.8, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.fillStyle = `rgba(${r + 30}, ${g + 15}, ${b}, 0.85)`;
+        ctx.beginPath();
+        
+        for (let i = 0; i <= this.numPoints; i++) {
+            const angle = (i / this.numPoints) * Math.PI * 2 - Math.PI/2;
+            const idx = i % this.numPoints;
+            const rads = this.radius * this.points[idx];
+            const px = this.x + Math.cos(angle) * rads;
+            const py = this.y + Math.sin(angle) * rads;
+            
+            if (i === 0) ctx.moveTo(px, py);
+            else {
+                const prevAngle = ((i - 1) / this.numPoints) * Math.PI * 2 - Math.PI/2;
+                const prevIdx = (i - 1) % this.numPoints;
+                const prevRads = this.radius * this.points[prevIdx];
+                const prevX = this.x + Math.cos(prevAngle) * prevRads;
+                const prevY = this.y + Math.sin(prevAngle) * prevRads;
+                const cpX = (prevX + px) / 2;
+                const cpY = (prevY + py) / 2;
+                ctx.quadraticCurveTo(prevX, prevY, cpX, cpY);
+            }
+        }
+        ctx.closePath();
+        ctx.fill();
+        
+        ctx.fillStyle = `rgba(255, 220, 180, 0.5)`;
+        ctx.beginPath();
+        ctx.ellipse(this.x - this.radius * 0.25, this.y - this.radius * 0.25, 
+                    this.radius * 0.2, this.radius * 0.12, -0.4, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.globalCompositeOperation = 'source-over';
+    }
+}
+
+for (let i = 0; i < numBlobs; i++) {
+    blobs.push(new Blob());
+}
+
+function drawLamp() {
+    const grad = ctx.createLinearGradient(lampX - lampW/2, 0, lampX + lampW/2, 0);
+    grad.addColorStop(0, 'rgba(30, 15, 8, 0.5)');
+    grad.addColorStop(0.15, 'rgba(50, 25, 12, 0.2)');
+    grad.addColorStop(0.5, 'rgba(70, 35, 18, 0.08)');
+    grad.addColorStop(0.85, 'rgba(50, 25, 12, 0.2)');
+    grad.addColorStop(1, 'rgba(30, 15, 8, 0.5)');
+    
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(lampX - lampW/2, lampY - lampH/2 + 35);
+    ctx.quadraticCurveTo(lampX - lampW/2 - 15, lampY, lampX - lampW/2, lampY + lampH/2 - 35);
+    ctx.lineTo(lampX + lampW/2, lampY + lampH/2 - 35);
+    ctx.quadraticCurveTo(lampX + lampW/2 + 15, lampY, lampX + lampW/2, lampY - lampH/2 + 35);
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.strokeStyle = 'rgba(255, 180, 120, 0.12)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(lampX - lampW/2 + 25, lampY - lampH/2 + 70);
+    ctx.quadraticCurveTo(lampX - lampW/2 + 8, lampY, lampX - lampW/2 + 25, lampY + lampH/2 - 70);
+    ctx.stroke();
+    
+    const capGrad = ctx.createLinearGradient(lampX - lampW/2, lampY - lampH/2 - 35, lampX + lampW/2, lampY - lampH/2 + 35);
+    capGrad.addColorStop(0, '#2a2a2a');
+    capGrad.addColorStop(0.5, '#555');
+    capGrad.addColorStop(1, '#2a2a2a');
+    ctx.fillStyle = capGrad;
+    ctx.beginPath();
+    ctx.ellipse(lampX, lampY - lampH/2, lampW/2 + 8, 35, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    const baseGrad = ctx.createLinearGradient(lampX - lampW/2, lampY + lampH/2, lampX + lampW/2, lampY + lampH/2 + 70);
+    baseGrad.addColorStop(0, '#333');
+    baseGrad.addColorStop(0.3, '#777');
+    baseGrad.addColorStop(0.7, '#555');
+    baseGrad.addColorStop(1, '#333');
+    ctx.fillStyle = baseGrad;
+    ctx.beginPath();
+    ctx.moveTo(lampX - lampW/2 - 8, lampY + lampH/2 - 15);
+    ctx.lineTo(lampX + lampW/2 + 8, lampY + lampH/2 - 15);
+    ctx.lineTo(lampX + lampW/2 + 25, lampY + lampH/2 + 70);
+    ctx.quadraticCurveTo(lampX, lampY + lampH/2 + 90, lampX - lampW/2 - 25, lampY + lampH/2 + 70);
+    ctx.closePath();
+    ctx.fill();
+    
+    const glowGrad = ctx.createRadialGradient(lampX, lampY + lampH/2 - 10, 0, lampX, lampY + lampH/2 - 10, 90);
+    glowGrad.addColorStop(0, 'rgba(255, 80, 0, 0.5)');
+    glowGrad.addColorStop(0.5, 'rgba(255, 40, 0, 0.15)');
+    glowGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = glowGrad;
+    ctx.fillRect(lampX - 140, lampY + lampH/2 - 40, 280, 90);
+}
+
+function checkCollisions() {
+    for (let i = 0; i < blobs.length; i++) {
+        for (let j = i + 1; j < blobs.length; j++) {
+            const b1 = blobs[i];
+            const b2 = blobs[j];
+            const dx = b2.x - b1.x;
+            const dy = b2.y - b1.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const minDist = (b1.radius + b2.radius) * 0.75;
+            
+            if (dist < minDist && dist > 0) {
+                const force = (minDist - dist) * 0.015;
+                const nx = dx / dist;
+                const ny = dy / dist;
+                
+                b1.vx -= nx * force;
+                b1.vy -= ny * force;
+                b2.vx += nx * force;
+                b2.vy += ny * force;
+                
+                if (Math.random() < 0.0008 && dist < minDist * 0.45) {
+                    const temp = b1.color;
+                    b1.color = b2.color;
+                    b2.color = temp;
+                }
+            }
+        }
+    }
+}
+
+function animate() {
+    ctx.setTransform((vpw/W) * dpr, 0, 0, (vph/H) * dpr, 0, 0);
+    
+    ctx.fillStyle = '#080404';
+    ctx.fillRect(0, 0, W, H);
+    
+    const ambient = ctx.createRadialGradient(lampX, lampY, 0, lampX, lampY, 360);
+    ambient.addColorStop(0, 'rgba(60, 25, 10, 0.25)');
+    ambient.addColorStop(1, 'transparent');
+    ctx.fillStyle = ambient;
+    ctx.fillRect(0, 0, W, H);
+    
+    checkCollisions();
+    
+    blobs.forEach(b => {
+        b.update();
+        b.draw();
+    });
+    
+    drawLamp();
+    
+    requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>

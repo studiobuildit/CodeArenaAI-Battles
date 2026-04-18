@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lightning Storm 540x960</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="stormCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('stormCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+
+        let lightning = [];
+        let flashAlpha = 0;
+        let rain = [];
+        const rainCount = 150;
+
+        for (let i = 0; i < rainCount; i++) {
+            rain.push({
+                x: Math.random() * W,
+                y: Math.random() * H,
+                l: Math.random() * 20 + 10,
+                v: Math.random() * 15 + 10
+            });
+        }
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+
+            canvas.width = vpw * dpr;
+            canvas.height = vph * dpr;
+
+            const scaleX = (vpw / W) * dpr;
+            const scaleY = (vph / H) * dpr;
+            ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        }
+
+        class Lightning {
+            constructor() {
+                this.segments = [];
+                this.x = Math.random() * W;
+                this.y = 80;
+                this.opacity = 1;
+                this.generate(this.x, this.y, 90, 10);
+            }
+
+            generate(x, y, angle, branches) {
+                if (y > H || branches <= 0) return;
+
+                const dist = Math.random() * 40 + 10;
+                const rad = (angle + (Math.random() * 40 - 20)) * Math.PI / 180;
+                const nextX = x + Math.cos(rad) * dist;
+                const nextY = y + Math.sin(rad) * dist;
+
+                this.segments.push({ x1: x, y1: y, x2: nextX, y2: nextY });
+
+                if (Math.random() > 0.8) {
+                    this.generate(nextX, nextY, angle + 30, branches - 1);
+                }
+                this.generate(nextX, nextY, angle, branches - 1);
+            }
+
+            draw() {
+                ctx.strokeStyle = `rgba(200, 220, 255, ${this.opacity})`;
+                ctx.lineWidth = 2;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = "#a0c0ff";
+                
+                ctx.beginPath();
+                this.segments.forEach(s => {
+                    ctx.moveTo(s.x1, s.y1);
+                    ctx.lineTo(s.x2, s.y2);
+                });
+                ctx.stroke();
+                
+                ctx.shadowBlur = 0;
+                this.opacity -= 0.05;
+            }
+        }
+
+        function drawClouds() {
+            const grad = ctx.createLinearGradient(0, 0, 0, 150);
+            grad.addColorStop(0, '#050505');
+            grad.addColorStop(0.8, '#1a1a20');
+            grad.addColorStop(1, 'rgba(26, 26, 32, 0)');
+            
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, 200);
+
+            ctx.fillStyle = '#101015';
+            for (let i = 0; i < 6; i++) {
+                ctx.beginPath();
+                ctx.arc(i * 100, 50, 80, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function update() {
+            ctx.fillStyle = '#0a0a0f';
+            ctx.fillRect(0, 0, W, H);
+
+            if (flashAlpha > 0) {
+                ctx.fillStyle = `rgba(160, 180, 255, ${flashAlpha})`;
+                ctx.fillRect(0, 0, W, H);
+                flashAlpha -= 0.08;
+            }
+
+            ctx.strokeStyle = 'rgba(174, 194, 224, 0.3)';
+            ctx.lineWidth = 1;
+            rain.forEach(r => {
+                ctx.beginPath();
+                ctx.moveTo(r.x, r.y);
+                ctx.lineTo(r.x + (r.v * 0.1), r.y + r.l);
+                ctx.stroke();
+                r.y += r.v;
+                if (r.y > H) {
+                    r.y = -20;
+                    r.x = Math.random() * W;
+                }
+            });
+
+            if (Math.random() > 0.97 && lightning.length === 0) {
+                lightning.push(new Lightning());
+                flashAlpha = 0.3;
+            }
+
+            lightning = lightning.filter(l => l.opacity > 0);
+            lightning.forEach(l => l.draw());
+
+            drawClouds();
+
+            requestAnimationFrame(update);
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        requestAnimationFrame(update);
+    </script>
+</body>
+</html>

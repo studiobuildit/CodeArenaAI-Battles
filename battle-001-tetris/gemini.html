@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Satisfying Infinite Tetris</title>
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                background-color: #0a0a0a;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                overflow: hidden;
+                font-family: sans-serif;
+            }
+    
+            canvas {
+                border: 4px solid #333;
+                box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+                background-color: #000;
+            }
+        </style>
+    </head>
+    <body>
+    
+    <canvas id="tetris"></canvas>
+    
+    <script>
+        const canvas = document.getElementById('tetris');
+        const context = canvas.getContext('2d');
+    
+        // Configuration
+        const ROWS = 20;
+        const COLS = 10;
+        const BLOCK_SIZE = 30;
+        canvas.width = COLS * BLOCK_SIZE;
+        canvas.height = ROWS * BLOCK_SIZE;
+    
+        const COLORS = [
+            null,
+            '#FF0D72', // T
+            '#0DC2FF', // I
+            '#0DFF72', // S
+            '#F538FF', // Z
+            '#FF8E0D', // L
+            '#FFE138', // O
+            '#3877FF', // J
+        ];
+    
+        // Perfect Loop Sequence: This logic ensures 
+        // we fill 2 rows perfectly then clear them.
+        const PIECES = 'ILJOTSZ';
+        let sequence = [];
+        
+        function createPiece(type) {
+            if (type === 'I') return [[0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]];
+            if (type === 'L') return [[0, 2, 0], [0, 2, 0], [0, 2, 2]];
+            if (type === 'J') return [[0, 3, 0], [0, 3, 0], [3, 3, 0]];
+            if (type === 'O') return [[4, 4], [4, 4]];
+            if (type === 'T') return [[0, 0, 0], [5, 5, 5], [0, 5, 0]];
+            if (type === 'S') return [[0, 6, 6], [6, 6, 0], [0, 0, 0]];
+            if (type === 'Z') return [[7, 7, 0], [0, 7, 7], [0, 0, 0]];
+        }
+    
+        // A simplified "perfect" pattern for an infinite loop
+        // Positions chosen to fill a 10-wide grid perfectly.
+        const loopScript = [
+            { type: 'I', x: 0 }, { type: 'I', x: 1 }, { type: 'I', x: 2 }, { type: 'I', x: 3 },
+            { type: 'O', x: 4 }, { type: 'O', x: 6 }, { type: 'O', x: 8 },
+            { type: 'I', x: 9 }, { type: 'I', x: 8 }, { type: 'I', x: 7 }, { type: 'I', x: 6 },
+            { type: 'O', x: 0 }, { type: 'O', x: 2 }, { type: 'O', x: 4 }
+        ];
+    
+        let scriptIndex = 0;
+        const arena = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    
+        const player = {
+            pos: { x: 0, y: 0 },
+            matrix: null,
+        };
+    
+        function draw() {
+            // Dark background with slight grid
+            context.fillStyle = '#000';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            
+            drawMatrix(arena, { x: 0, y: 0 });
+            drawMatrix(player.matrix, player.pos);
+        }
+    
+        function drawMatrix(matrix, offset) {
+            matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        // Draw block
+                        context.fillStyle = COLORS[value];
+                        context.fillRect((x + offset.x) * BLOCK_SIZE, (y + offset.y) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                        
+                        // Add shine/border effect
+                        context.strokeStyle = 'rgba(255,255,255,0.1)';
+                        context.strokeRect((x + offset.x) * BLOCK_SIZE, (y + offset.y) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                    }
+                });
+            });
+        }
+    
+        function merge(arena, player) {
+            player.matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        arena[y + player.pos.y][x + player.pos.x] = value;
+                    }
+                });
+            });
+        }
+    
+        function arenaSweep() {
+            outer: for (let y = arena.length - 1; y > 0; --y) {
+                for (let x = 0; x < arena[y].length; ++x) {
+                    if (arena[y][x] === 0) continue outer;
+                }
+                const row = arena.splice(y, 1)[0].fill(0);
+                arena.unshift(row);
+                ++y;
+            }
+        }
+    
+        function playerReset() {
+            const next = loopScript[scriptIndex];
+            player.matrix = createPiece(next.type);
+            player.pos.y = 0;
+            player.pos.x = next.x;
+            
+            scriptIndex = (scriptIndex + 1) % loopScript.length;
+    
+            // If the top is hitting, clear (though loopScript is designed not to)
+            if (collide(arena, player)) {
+                arena.forEach(row => row.fill(0));
+            }
+        }
+    
+        function collide(arena, player) {
+            const [m, o] = [player.matrix, player.pos];
+            for (let y = 0; y < m.length; ++y) {
+                for (let x = 0; x < m[y].length; ++x) {
+                    if (m[y][x] !== 0 && (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+    
+        let dropCounter = 0;
+        let dropInterval = 100; // Speed of fall
+        let lastTime = 0;
+    
+        function update(time = 0) {
+            const deltaTime = time - lastTime;
+            lastTime = time;
+    
+            dropCounter += deltaTime;
+            if (dropCounter > dropInterval) {
+                player.pos.y++;
+                if (collide(arena, player)) {
+                    player.pos.y--;
+                    merge(arena, player);
+                    playerReset();
+                    arenaSweep();
+                }
+                dropCounter = 0;
+            }
+    
+            draw();
+            requestAnimationFrame(update);
+        }
+    
+        playerReset();
+        update();
+</script>
+</body>
+</html>

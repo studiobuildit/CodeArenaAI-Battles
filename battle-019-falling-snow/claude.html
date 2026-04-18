@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peaceful Winter Snow</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="snowCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('snowCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+
+        const snowflakes = [];
+        const snowflakeCount = 250;
+        let groundSnow = 0;
+        const maxAccumulation = 60;
+
+        function initSnow() {
+            for (let i = 0; i < snowflakeCount; i++) {
+                snowflakes.push({
+                    x: Math.random() * W,
+                    y: Math.random() * H,
+                    r: Math.random() * 3 + 1,
+                    d: Math.random() * snowflakeCount,
+                    v: Math.random() * 1.5 + 0.5,
+                    drift: Math.random() * 0.5 - 0.25
+                });
+            }
+        }
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+
+            canvas.width = vpw * dpr;
+            canvas.height = vph * dpr;
+
+            const scaleX = (vpw / W) * dpr;
+            const scaleY = (vph / H) * dpr;
+            ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        }
+
+        function drawTree(x, y, scale) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+            ctx.fillStyle = '#05101a';
+            
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-40, 80);
+            ctx.lineTo(-30, 80);
+            ctx.lineTo(-50, 140);
+            ctx.lineTo(-40, 140);
+            ctx.lineTo(-60, 210);
+            ctx.lineTo(60, 210);
+            ctx.lineTo(40, 140);
+            ctx.lineTo(50, 140);
+            ctx.lineTo(30, 80);
+            ctx.lineTo(40, 80);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.fillRect(-8, 210, 16, 30);
+            ctx.restore();
+        }
+
+        function update() {
+            const grad = ctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, '#0a192f');
+            grad.addColorStop(1, '#1b2d48');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            drawTree(120, 680, 0.8);
+            drawTree(400, 650, 0.9);
+            drawTree(250, 710, 0.7);
+
+            if (groundSnow < maxAccumulation) groundSnow += 0.005;
+            
+            ctx.fillStyle = '#f0f4f8';
+            ctx.beginPath();
+            ctx.moveTo(0, H);
+            ctx.lineTo(0, H - 40 - groundSnow);
+            ctx.quadraticCurveTo(W / 2, H - 60 - groundSnow, W, H - 35 - groundSnow);
+            ctx.lineTo(W, H);
+            ctx.fill();
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = 'white';
+            
+            for (let i = 0; i < snowflakes.length; i++) {
+                const p = snowflakes[i];
+                p.y += p.v;
+                p.x += Math.sin(p.d * 0.01) + 0.2 + p.drift;
+
+                if (p.y > H - groundSnow - 30) {
+                    p.y = -10;
+                    p.x = Math.random() * W;
+                }
+                if (p.x > W) p.x = 0;
+                if (p.x < 0) p.x = W;
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                ctx.fill();
+                p.d += 1;
+            }
+
+            ctx.shadowBlur = 0;
+
+            const glow = ctx.createRadialGradient(W / 2, H / 3, 100, W / 2, H / 3, 600);
+            glow.addColorStop(0, 'rgba(200, 230, 255, 0.1)');
+            glow.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
+            ctx.fillStyle = glow;
+            ctx.fillRect(0, 0, W, H);
+
+            requestAnimationFrame(update);
+        }
+
+        window.addEventListener('resize', resize);
+        initSnow();
+        resize();
+        requestAnimationFrame(update);
+    </script>
+</body>
+</html>

@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Helicopter Rescue</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+  }
+  #wrap {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+  #game {
+    display: block;
+    background: #000;
+    image-rendering: auto;
+  }
+  #model-tag {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 20;
+    font: bold 11px monospace;
+    color: #d8c8ff;
+    background: rgba(0,0,0,0.45);
+    padding: 4px 7px;
+    border-radius: 4px;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="model-tag">CLAUDE</div>
+<div id="wrap">
+  <canvas id="game"></canvas>
+</div>
+<script>
+(() => {
+  const LOGICAL_W = 540;
+  const LOGICAL_H = 960;
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const ratio = LOGICAL_W / LOGICAL_H;
+    let cssW, cssH;
+    if (vw / vh > ratio) {
+      cssH = vh;
+      cssW = vh * ratio;
+    } else {
+      cssW = vw;
+      cssH = vw / ratio;
+    }
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    canvas.width = Math.floor(LOGICAL_W * dpr);
+    canvas.height = Math.floor(LOGICAL_H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Game state
+  const W = LOGICAL_W;
+  const H = LOGICAL_H;
+
+  // Buildings with rooftops holding people
+  const buildings = [];
+  const numBuildings = 5;
+  const startX = 120;
+  const gap = (W - startX - 40) / numBuildings;
+  for (let i = 0; i < numBuildings; i++) {
+    const bw = 55 + Math.random() * 15;
+    const bh = 180 + Math.random() * 140;
+    buildings.push({
+      x: startX + i * gap + (gap - bw) / 2,
+      y: H - bh,
+      w: bw,
+      h: bh,
+      color: `hsl(${210 + Math.random() * 30}, 15%, ${18 + Math.random() * 10}%)`,
+      windows: []
+    });
+    const last = buildings[buildings.length - 1];
+    // generate windows
+    const cols = Math.floor(last.w / 14);
+    const rows = Math.floor(last.h / 20);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        last.windows.push({
+          x: last.x + 4 + c * 14,
+          y: last.y + 10 + r * 20,
+          lit: Math.random() < 0.55,
+          flicker: Math.random() * 100
+        });
+      }
+    }
+  }
+
+  // Safety pad on the left
+  const safePad = {
+    x: 10,
+    y: H - 140,
+    w: 90,
+    h: 30
+  };
+
+  // People on rooftops
+  let people = [];
+  function spawnPeople() {
+    people = [];
+    buildings.forEach(b => {
+      people.push({
+        x: b.x + b.w / 2,
+        y: b.y - 14,
+        building: b,
+        wave: Math.random() * Math.PI * 2,
+        rescued: false,
+        saved: 0 // number of times saved (for blinking)
+      });
+    });
+  }
+  spawnPeople();
+
+  // Water
+  let waterLevel = H - 30;
+  const waterMin = H - 30;
+  const waterMax = H - 60; // won't rise too high
+  let waterPhase = 0;
+
+  // Helicopter
+  const heli = {
+    x: -80,
+    y: 120,
+    vx: 1.4,
+    vy: 0,
+    targetX: 0,
+    targetY: 0,
+    state: 'seek', // seek, descend, ascend, deliver, return
+    rotor: 0,
+    tailRotor: 0,
+    ropeLen: 0,
+    targetRopeLen: 0,
+    carrying: null,
+    targetPerson: null,
+    bob: 0
+  };
+
+  let rescueCount = 0;
+  let totalRescuedEver = 0;
+
+  // Raindrops
+  const rain = [];
+  for (let i = 0; i < 120; i++) {
+    rain.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      len: 8 + Math.random() * 10,
+      speed: 9 + Math.random() * 6
+    });
+  }
+
+  // Lightning
+  let lightning = 0;
+  let nextLightning = 180 + Math.random() * 300;
+  let lightningBolts = [];
+
+  // Clouds (subtle)
+  const clouds = [];
+  for (let i = 0; i < 6; i++) {
+    clouds.push({
+      x: Math.random() * W,
+      y: 20 + Math.random() * 80,
+      w: 80 + Math.random() * 80,
+      speed: 0.1 + Math.random() * 0.2
+    });
+  }
+
+  // Reset scenario
+  function fullReset() {
+    waterLevel = waterMin;
+    spawnPeople();
+    rescueCount = 0;
+    heli.state = 'seek';
+    heli.carrying = null;
+    heli.targetPerson = null;
+    heli.ropeLen = 0;
+    heli.targetRopeLen = 0;
+    heli.x = -80;
+    heli.y = 120;
+  }
+
+  function pickTarget() {
+    const available = people.filter(p => !p.rescued);
+    if (available.length === 0) return null;
+    // pick rightmost (furthest)
+    available.sort((a, b) => a.x - b.x);
+    return available[available.length - 1];
+  }
+
+  function updateHelicopter() {
+    heli.rotor += 1.2;
+    heli.tailRotor += 1.5;
+    heli.bob += 0.05;
+
+    if (heli.state === 'seek') {
+      if (!heli.targetPerson) {
+        heli.targetPerson = pickTarget();
+        if (!heli.targetPerson) {
+          heli.state = 'done';
+          return;
+        }
+      }
+      const tx = heli.targetPerson.x;
+      const ty = 120;
+      const dx = tx - heli.x;
+      const dy = ty - heli.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 2) {
+        heli.state = 'descend';
+        heli.targetRopeLen = heli.targetPerson.y - heli.y - 5;
+      } else {
+        const spd = 2.2;
+        heli.x += (dx / dist) * spd;
+        heli.y += (dy / dist) * spd * 0.8;
+      }
+    } else if (heli.state === 'descend') {
+      heli.ropeLen += 3;
+      if (heli.ropeLen >= heli.targetRopeLen) {
+        heli.ropeLen = heli.targetRopeLen;
+        heli.carrying = heli.targetPerson;
+        heli.carrying.rescued = true;
+        heli.state = 'ascend';
+      }
+    } else if (heli.state === 'ascend') {
+      heli.ropeLen -= 3;
+      if (heli.ropeLen <= 0) {
+        heli.ropeLen = 0;
+        heli.state = 'deliver';
+      }
+    } else if (heli.state === 'deliver') {
+      const tx = safePad.x + safePad.w / 2;
+      const ty = 120;
+      const dx = tx - heli.x;
+      const dy = ty - heli.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 3) {
+        heli.targetRopeLen = safePad.y - heli.y - 10;
+        heli.state = 'dropDescend';
+      } else {
+        const spd = 2.4;
+        heli.x += (dx / dist) * spd;
+        heli.y += (dy / dist) * spd * 0.5;
+      }
+    } else if (heli.state === 'dropDescend') {
+      heli.ropeLen += 3;
+      if (heli.ropeLen >= heli.targetRopeLen) {
+        heli.ropeLen = heli.targetRopeLen;
+        // drop off
+        rescueCount++;
+        totalRescuedEver++;
+        heli.carrying = null;
+        heli.targetPerson = null;
+        heli.state = 'dropAscend';
+      }
+    } else if (heli.state === 'dropAscend') {
+      heli.ropeLen -= 3;
+      if (heli.ropeLen <= 0) {
+        heli.ropeLen = 0;
+        if (people.every(p => p.rescued)) {
+          heli.state = 'finishing';
+          heli.finishTimer = 60;
+        } else {
+          heli.state = 'seek';
+        }
+      }
+    } else if (heli.state === 'finishing') {
+      heli.finishTimer--;
+      if (heli.finishTimer <= 0) {
+        // full reset — new round
+        fullReset();
+      }
+    }
+  }
+
+  function drawSky() {
+    const g = ctx.createLinearGradient(0, 0, 0, H * 0.7);
+    g.addColorStop(0, '#000');
+    g.addColorStop(0.5, '#050812');
+    g.addColorStop(1, '#0a1020');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // Lightning flash overlay
+    if (lightning > 0) {
+      ctx.fillStyle = `rgba(180, 200, 255, ${lightning * 0.35})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function drawClouds() {
+    clouds.forEach(c => {
+      c.x += c.speed;
+      if (c.x > W + 100) c.x = -100;
+      ctx.fillStyle = 'rgba(30,35,50,0.5)';
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, c.w / 2, 14, 0, 0, Math.PI * 2);
+      ctx.ellipse(c.x + 20, c.y - 8, c.w / 3, 12, 0, 0, Math.PI * 2);
+      ctx.ellipse(c.x - 20, c.y + 4, c.w / 3, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  function drawLightning() {
+    if (lightningBolts.length === 0) return;
+    ctx.strokeStyle = 'rgba(200,220,255,0.95)';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#aaf';
+    ctx.shadowBlur = 12;
+    lightningBolts.forEach(bolt => {
+      ctx.beginPath();
+      ctx.moveTo(bolt[0].x, bolt[0].y);
+      for (let i = 1; i < bolt.length; i++) {
+        ctx.lineTo(bolt[i].x, bolt[i].y);
+      }
+      ctx.stroke();
+    });
+    ctx.shadowBlur = 0;
+  }
+
+  function generateLightning() {
+    const bolts = [];
+    const startX = 50 + Math.random() * (W - 100);
+    const points = [{ x: startX, y: 0 }];
+    let y = 0;
+    let x = startX;
+    while (y < H * 0.5) {
+      y += 15 + Math.random() * 20;
+      x += (Math.random() - 0.5) * 40;
+      points.push({ x, y });
+    }
+    bolts.push(points);
+    // branch
+    if (Math.random() < 0.7) {
+      const branchStart = points[Math.floor(points.length / 2)];
+      const branch = [{ x: branchStart.x, y: branchStart.y }];
+      let bx = branchStart.x, by = branchStart.y;
+      for (let i = 0; i < 4; i++) {
+        by += 10 + Math.random() * 15;
+        bx += (Math.random() - 0.5) * 30;
+        branch.push({ x: bx, y: by });
+      }
+      bolts.push(branch);
+    }
+    lightningBolts = bolts;
+  }
+
+  function drawBuildings() {
+    buildings.forEach(b => {
+      // Submerged portion darker
+      ctx.fillStyle = b.color;
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      // Windows
+      b.windows.forEach(w => {
+        if (w.y > waterLevel) return; // underwater
+        w.flicker += 0.05;
+        const lit = w.lit && Math.sin(w.flicker) > -0.7;
+        if (lit) {
+          ctx.fillStyle = lightning > 0 ? '#fff8c0' : '#f5d76e';
+          ctx.fillRect(w.x, w.y, 6, 8);
+          ctx.fillStyle = 'rgba(255,220,120,0.3)';
+          ctx.fillRect(w.x - 1, w.y - 1, 8, 10);
+        } else {
+          ctx.fillStyle = '#0a0e18';
+          ctx.fillRect(w.x, w.y, 6, 8);
+        }
+      });
+      // Roof edge
+      ctx.fillStyle = '#2a3040';
+      ctx.fillRect(b.x - 2, b.y - 3, b.w + 4, 4);
+
+      // Antenna on some
+      if (b.w > 60) {
+        ctx.strokeStyle = '#444';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(b.x + b.w / 2, b.y - 3);
+        ctx.lineTo(b.x + b.w / 2, b.y - 18);
+        ctx.stroke();
+      }
+    });
+  }
+
+  function drawSafetyPad() {
+    ctx.fillStyle = '#2a5a3a';
+    ctx.fillRect(safePad.x, safePad.y, safePad.w, safePad.h);
+    ctx.fillStyle = '#3a7a4a';
+    ctx.fillRect(safePad.x, safePad.y, safePad.w, 4);
+    // "H" helipad
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('H', safePad.x + safePad.w / 2, safePad.y + 22);
+    // Little hill/platform below
+    ctx.fillStyle = '#1a3a25';
+    ctx.beginPath();
+    ctx.moveTo(safePad.x - 10, H);
+    ctx.lineTo(safePad.x, safePad.y + safePad.h);
+    ctx.lineTo(safePad.x + safePad.w, safePad.y + safePad.h);
+    ctx.lineTo(safePad.x + safePad.w + 10, H);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawPeople() {
+    people.forEach(p => {
+      if (p.rescued) return;
+      p.wave += 0.15;
+      const px = p.x;
+      const py = p.y;
+      // body
+      ctx.fillStyle = '#ff6b6b';
+      ctx.fillRect(px - 3, py - 2, 6, 10);
+      // head
+      ctx.fillStyle = '#ffd3a0';
+      ctx.beginPath();
+      ctx.arc(px, py - 5, 3, 0, Math.PI * 2);
+      ctx.fill();
+      // waving arm
+      const armY = py - 2 + Math.sin(p.wave) * 2;
+      const armX = px + 3 + Math.sin(p.wave) * 3;
+      ctx.strokeStyle = '#ffd3a0';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(px + 2, py);
+      ctx.lineTo(armX, armY - 6);
+      ctx.stroke();
+      // legs
+      ctx.strokeStyle = '#3a3a5a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(px - 1, py + 8);
+      ctx.lineTo(px - 2, py + 13);
+      ctx.moveTo(px + 1, py + 8);
+      ctx.lineTo(px + 2, py + 13);
+      ctx.stroke();
+    });
+    // Saved people on pad
+    const savedCount = Math.min(rescueCount, 4);
+    for (let i = 0; i < savedCount; i++) {
+      const px = safePad.x + 12 + i * 18;
+      const py = safePad.y - 4;
+      ctx.fillStyle = '#6bff8a';
+      ctx.fillRect(px - 2, py - 2, 4, 8);
+      ctx.fillStyle = '#ffd3a0';
+      ctx.beginPath();
+      ctx.arc(px, py - 5, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawWater() {
+    waterPhase += 0.04;
+    const g = ctx.createLinearGradient(0, waterLevel, 0, H);
+    g.addColorStop(0, 'rgba(30, 100, 180, 0.85)');
+    g.addColorStop(1, 'rgba(10, 40, 90, 0.95)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, waterLevel);
+    for (let x = 0; x <= W; x += 10) {
+      const y = waterLevel + Math.sin(x * 0.04 + waterPhase) * 3 + Math.sin(x * 0.02 - waterPhase * 0.7) * 2;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.fill();
+
+    // Highlight ripples
+    ctx.strokeStyle = 'rgba(120, 200, 255, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 10) {
+      const y = waterLevel + Math.sin(x * 0.04 + waterPhase) * 3 + Math.sin(x * 0.02 - waterPhase * 0.7) * 2;
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // secondary wave line
+    ctx.strokeStyle = 'rgba(150, 220, 255, 0.25)';
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 10) {
+      const y = waterLevel + 6 + Math.sin(x * 0.05 - waterPhase * 1.2) * 2;
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  function drawRain() {
+    ctx.strokeStyle = 'rgba(150, 180, 220, 0.55)';
+    ctx.lineWidth = 1;
+    rain.forEach(r => {
+      r.x -= 2;
+      r.y += r.speed;
+      if (r.y > H) {
+        r.y = -20;
+        r.x = Math.random() * (W + 100);
+      }
+      if (r.x < -20) r.x = W + 20;
+      ctx.beginPath();
+      ctx.moveTo(r.x, r.y);
+      ctx.lineTo(r.x - 2, r.y - r.len);
+      ctx.stroke();
+    });
+  }
+
+  function drawHelicopter() {
+    const bobY = Math.sin(heli.bob) * 1.5;
+    const hx = heli.x;
+    const hy = heli.y + bobY;
+
+    // Rope
+    if (heli.ropeLen > 0) {
+      ctx.strokeStyle = '#888';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(hx, hy + 8);
+      ctx.lineTo(hx, hy + 8 + heli.ropeLen);
+      ctx.stroke();
+
+      // Hook or carried person
+      if (heli.carrying) {
+        const py = hy + 8 + heli.ropeLen;
+        // body
+        ctx.fillStyle = '#ff6b6b';
+        ctx.fillRect(hx - 3, py, 6, 10);
+        ctx.fillStyle = '#ffd3a0';
+        ctx.beginPath();
+        ctx.arc(hx, py - 3, 3, 0, Math.PI * 2);
+        ctx.fill();
+        // legs
+        ctx.strokeStyle = '#3a3a5a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(hx - 1, py + 10);
+        ctx.lineTo(hx - 2, py + 15);
+        ctx.moveTo(hx + 1, py + 10);
+        ctx.lineTo(hx + 2, py + 15);
+        ctx.stroke();
+      } else {
+        // hook
+        ctx.strokeStyle = '#aaa';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(hx, hy + 8 + heli.ropeLen + 3, 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // Body
+    ctx.fillStyle = '#d63447';
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, 22, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Cockpit window
+    ctx.fillStyle = '#7ec8e3';
+    ctx.beginPath();
+    ctx.ellipse(hx + 12, hy - 1, 8, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Tail boom
+    ctx.fillStyle = '#d63447';
+    ctx.fillRect(hx - 32, hy - 2, 15, 4);
+    // Tail fin
+    ctx.beginPath();
+    ctx.moveTo(hx - 32, hy);
+    ctx.lineTo(hx - 38, hy - 6);
+    ctx.lineTo(hx - 34, hy + 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Skids
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(hx - 15, hy + 10);
+    ctx.lineTo(hx + 15, hy + 10);
+    ctx.stroke();
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(hx - 10, hy + 8);
+    ctx.lineTo(hx - 10, hy + 10);
+    ctx.moveTo(hx + 10, hy + 8);
+    ctx.lineTo(hx + 10, hy + 10);
+    ctx.stroke();
+
+    // Main rotor - spinning blur
+    ctx.save();
+    ctx.translate(hx, hy - 9);
+    ctx.rotate(heli.rotor);
+    ctx.strokeStyle = 'rgba(200,200,200,0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 30, 2, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // Blades
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      ctx.rotate((Math.PI * 2) / 3);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(28, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Rotor hub
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(hx, hy - 9, 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Mast
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(hx, hy - 9);
+    ctx.lineTo(hx, hy - 4);
+    ctx.stroke();
+
+    // Tail rotor
+    ctx.save();
+    ctx.translate(hx - 37, hy);
+    ctx.rotate(heli.tailRotor);
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 2; i++) {
+      ctx.rotate(Math.PI);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(5, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Light on belly
+    ctx.fillStyle = Math.floor(heli.rotor * 2) % 2 === 0 ? '#ff2a2a' : '#550000';
+    ctx.beginPath();
+    ctx.arc(hx, hy + 8, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawHUD() {
+    // Panel
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, W, 46);
+    ctx.strokeStyle = '#2a3a55';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 46);
+    ctx.lineTo(W, 46);
+    ctx.stroke();
+
+    // Title
+    ctx.fillStyle = '#e0f0ff';
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('RESCUE OPS', 16, 20);
+
+    ctx.fillStyle = '#ff6b6b';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('● LIVE', 16, 36);
+
+    // Rescue counter
+    ctx.fillStyle = '#7eff9a';
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`RESCUED: ${totalRescuedEver.toString().padStart(3, '0')}`, W - 16, 28);
+
+    // remaining
+    const remaining = people.filter(p => !p.rescued).length;
+    ctx.fillStyle = '#ffcc66';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText(`STRANDED: ${remaining}`, W - 16, 42);
+  }
+
+  function update() {
+    // Water rise
+    if (waterLevel > waterMax) {
+      waterLevel -= 0.04;
+    }
+
+    // Lightning timer
+    nextLightning--;
+    if (nextLightning <= 0) {
+      lightning = 1;
+      generateLightning();
+      nextLightning = 180 + Math.random() * 300;
+    }
+    if (lightning > 0) {
+      lightning -= 0.03;
+      if (lightning < 0) {
+        lightning = 0;
+        lightningBolts = [];
+      }
+    }
+
+    updateHelicopter();
+  }
+
+  function render() {
+    drawSky();
+    drawLightning();
+    drawClouds();
+    drawBuildings();
+    drawPeople();
+    drawSafetyPad();
+    drawWater();
+    drawHelicopter();
+    drawRain();
+    drawHUD();
+  }
+
+  function loop() {
+    update();
+    render();
+    requestAnimationFrame(loop);
+  }
+  loop();
+})();
+</script>
+</body>
+</html>

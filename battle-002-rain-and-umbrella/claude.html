@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rain on Umbrella</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100vw;height:100vh;overflow:hidden;background:#0b0e17}
+  canvas{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// --- Setup ---
+const cv = document.getElementById('c');
+const cx = cv.getContext('2d');
+let W, H, dpr;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr;
+  cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Helpers ---
+const rand = (a, b) => a + Math.random() * (b - a);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// --- Wind System ---
+const wind = {
+  current: 0,
+  target: 0,
+  gustTimer: 0,
+  gustDuration: 0,
+  baseWind: 0.15,
+  update(dt) {
+    this.gustTimer -= dt;
+    if (this.gustTimer <= 0) {
+      this.target = rand(-0.7, 0.7);
+      this.gustDuration = rand(1.5, 4);
+      this.gustTimer = this.gustDuration + rand(1, 3);
+    }
+    const gustFade = this.gustTimer > this.gustDuration ? 0 : 1;
+    const effective = gustFade ? this.target : this.baseWind;
+    this.current = lerp(this.current, effective, dt * 1.2);
+  },
+  get strength() { return this.current; },
+  get angle() { return this.current * 0.35; }
+};
+
+// --- Umbrella ---
+const umbrella = {
+  get x() { return W * 0.5; },
+  get y() { return H * 0.52; },
+  get radius() { return Math.min(W, H) * 0.22; },
+  tilt: 0,
+  handleLen: 0,
+  update(dt) {
+    this.tilt = lerp(this.tilt, wind.angle, dt * 2.5);
+    this.handleLen = this.radius * 1.15;
+  },
+  sampleArc(t) {
+    const angle = -Math.PI + t * Math.PI;
+    const r = this.radius;
+    const cos = Math.cos(this.tilt);
+    const sin = Math.sin(this.tilt);
+    const lx = Math.cos(angle) * r;
+    const ly = Math.sin(angle) * r * 0.35;
+    const rx = lx * cos - ly * sin;
+    const ry = lx * sin + ly * cos;
+    const nlx = Math.cos(angle);
+    const nly = Math.sin(angle) * 0.35;
+    const len = Math.hypot(nlx, nly);
+    const nnx = (nlx * cos - nly * sin) / len;
+    const nny = (nlx * sin + nly * cos) / len;
+    return { x: this.x + rx, y: this.y + ry, nx: nnx, ny: nny };
+  },
+  hitTest(px, py) {
+    const dx = px - this.x;
+    const dy = py - this.y;
+    const cos = Math.cos(-this.tilt);
+    const sin = Math.sin(-this.tilt);
+    const lx = dx * cos - dy * sin;
+    const ly = dx * sin + dy * cos;
+    const r = this.radius;
+    const flatY = 0.35;
+    const ex = lx / r;
+    const ey = ly / (r * flatY);
+    const dist = Math.hypot(ex, ey);
+    if (dist < 1.08 && dist > 0.85 && ly < r * 0.06 && ly > -r * flatY * 1.1) {
+      return { hit: true, t: (Math.atan2(ey, ex) + Math.PI) / Math.PI };
+    }
+    if (ly < r * 0.04 && ly > -r * flatY * 0.95 && Math.abs(lx) < r * 0.98) {
+      return { hit: true, t: (Math.atan2(ly/(r*flatY), lx/r) + Math.PI) / Math.PI };
+    }
+    return { hit: false };
+  },
+  draw() {
+    cx.save();
+    cx.translate(this.x, this.y);
+    cx.rotate(this.tilt);
+    const r = this.radius;
+    cx.strokeStyle = '#4a3728';
+    cx.lineWidth = Math.max(3, r * 0.025);
+    cx.lineCap = 'round';
+    cx.beginPath();
+    cx.moveTo(0, 0);
+    cx.lineTo(0, this.handleLen);
+    cx.stroke();
+    const hookR = r * 0.065;
+    cx.beginPath();
+    cx.arc(hookR, this.handleLen, hookR, 0, Math.PI);
+    cx.stroke();
+    cx.strokeStyle = '#5a4838';
+    cx.lineWidth = Math.max(2, r * 0.018);
+    cx.beginPath();
+    cx.moveTo(0, 0);
+    cx.lineTo(0, -r * 0.38);
+    cx.stroke();
+    cx.fillStyle = '#8a7560';
+    cx.beginPath();
+    cx.arc(0, -r * 0.39, r * 0.022, 0, Math.PI * 2);
+    cx.fill();
+    const grad = cx.createLinearGradient(-r, -r * 0.35, r, 0);
+    grad.addColorStop(0, '#b22234');
+    grad.addColorStop(0.35, '#d4364a');
+    grad.addColorStop(0.55, '#c92e42');
+    grad.addColorStop(0.8, '#a01e2e');
+    grad.addColorStop(1, '#8a1825');
+    cx.fillStyle = grad;
+    cx.beginPath();
+    cx.moveTo(-r, 0);
+    cx.bezierCurveTo(-r, -r * 0.65, -r * 0.3, -r * 0.55, 0, -r * 0.35);
+    cx.bezierCurveTo(r * 0.3, -r * 0.55, r, -r * 0.65, r, 0);
+    const panels = 8;
+    for (let i = panels; i >= 0; i--) {
+      const t = i / panels;
+      const px = lerp(r, -r, t);
+      const nextPx = lerp(r, -r, (i - 1) / panels);
+      const mid = (px + nextPx) / 2;
+      const sag = r * 0.035;
+      if (i > 0) cx.quadraticCurveTo(mid + (px - mid) * 0.5, sag, nextPx, 0);
+    }
+    cx.closePath();
+    cx.fill();
+    cx.strokeStyle = 'rgba(0,0,0,0.15)';
+    cx.lineWidth = 1;
+    for (let i = 1; i < panels; i++) {
+      const t = i / panels;
+      const px = lerp(-r, r, t);
+      const topY = -r * 0.35 + (Math.abs(t - 0.5) * 2) ** 1.8 * r * 0.35;
+      cx.beginPath();
+      cx.moveTo(px, 0);
+      cx.quadraticCurveTo(px * 0.95, topY * 0.5, px * 0.6, topY * 0.85);
+      cx.stroke();
+    }
+    const sheen = cx.createRadialGradient(-r * 0.2, -r * 0.25, 0, 0, -r * 0.15, r * 0.8);
+    sheen.addColorStop(0, 'rgba(255,255,255,0.12)');
+    sheen.addColorStop(0.4, 'rgba(255,255,255,0.04)');
+    sheen.addColorStop(1, 'rgba(0,0,0,0)');
+    cx.fillStyle = sheen;
+    cx.beginPath();
+    cx.moveTo(-r, 0);
+    cx.bezierCurveTo(-r, -r * 0.65, -r * 0.3, -r * 0.55, 0, -r * 0.35);
+    cx.bezierCurveTo(r * 0.3, -r * 0.55, r, -r * 0.65, r, 0);
+    cx.closePath();
+    cx.fill();
+    cx.restore();
+  }
+};
+
+// --- Systems ---
+const drops = [];
+const MAX_DROPS = 600;
+function spawnDrop() {
+  const windOff = wind.strength * H * 0.5;
+  return {
+    x: rand(-W * 0.3, W * 1.3) - windOff,
+    y: rand(-H * 0.3, -20),
+    vx: wind.strength * rand(150, 250),
+    vy: rand(700, 1100),
+    len: rand(12, 28),
+    alpha: rand(0.15, 0.5),
+    width: rand(1, 2.2),
+    alive: true,
+    bounced: false,
+  };
+}
+const splashes = [];
+function spawnSplash(x, y, vx, vy) {
+  const count = Math.floor(rand(2, 5));
+  for (let i = 0; i < count; i++) {
+    splashes.push({
+      x, y, vx: vx * rand(0.2, 0.7) + rand(-60, 60),
+      vy: vy * rand(-0.3, -0.1) + rand(-180, -60),
+      life: 1, decay: rand(0.02, 0.04), size: rand(1, 3), gravity: rand(350, 500),
+    });
+  }
+}
+const drips = [];
+let dripTimer = 0;
+function spawnDrip() {
+  const side = Math.random() < 0.5 ? 0.02 : 0.98;
+  const pt = umbrella.sampleArc(side);
+  drips.push({
+    x: pt.x, y: pt.y, vx: wind.strength * 30 + (side < 0.5 ? -20 : 20),
+    vy: rand(20, 60), life: 1, decay: rand(0.008, 0.015), size: rand(2, 4), gravity: 400,
+  });
+}
+const ripples = [];
+const groundY = () => H * 0.82;
+function spawnRipple(x) {
+  ripples.push({ x, y: groundY(), radius: rand(1, 3), maxRadius: rand(12, 30), life: 1, decay: rand(0.015, 0.03) });
+}
+const puddles = [];
+for (let i = 0; i < 12; i++) puddles.push({ x: rand(W * 0.05, W * 0.95), w: rand(30, 80), shimmer: rand(0, Math.PI * 2), speed: rand(1.5, 3) });
+let lightning = { flash: 0, timer: rand(6, 15) };
+const mist = [];
+for (let i = 0; i < 25; i++) mist.push({ x: rand(0, W), y: rand(groundY() - 40, H), size: rand(40, 120), alpha: rand(0.02, 0.06), speed: rand(10, 30), phase: rand(0, Math.PI * 2) });
+
+function update(dt) {
+  wind.update(dt);
+  umbrella.update(dt);
+  for (let i = 0; i < 8; i++) if (drops.length < MAX_DROPS) drops.push(spawnDrop());
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    d.vx = lerp(d.vx, wind.strength * rand(150, 250), dt * 2);
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    if (!d.bounced) {
+      const hit = umbrella.hitTest(d.x, d.y);
+      if (hit.hit) { spawnSplash(d.x, d.y, d.vx, d.vy); d.alive = false; }
+    }
+    if (d.y > groundY()) { spawnRipple(d.x); d.alive = false; }
+    if (d.x < -100 || d.x > W + 100 || d.y > H + 50) d.alive = false;
+    if (!d.alive) drops.splice(i, 1);
+  }
+  for (let i = splashes.length - 1; i >= 0; i--) {
+    const s = splashes[i];
+    s.x += s.vx; s.vy += s.gravity * dt; s.y += s.vy * dt; s.life -= s.decay;
+    if (s.y > groundY()) { spawnRipple(s.x); s.life = 0; }
+    if (s.life <= 0) splashes.splice(i, 1);
+  }
+  dripTimer -= dt;
+  if (dripTimer <= 0) { spawnDrip(); dripTimer = rand(0.08, 0.25); }
+  for (let i = drips.length - 1; i >= 0; i--) {
+    const d = drips[i];
+    d.x += d.vx * dt; d.vy += d.gravity * dt; d.y += d.vy * dt; d.life -= d.decay;
+    if (d.y > groundY()) { spawnRipple(d.x); d.life = 0; }
+    if (d.life <= 0) drips.splice(i, 1);
+  }
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i];
+    r.radius = lerp(r.radius, r.maxRadius, dt * 3);
+    r.life -= r.decay;
+    if (r.life <= 0) ripples.splice(i, 1);
+  }
+  lightning.timer -= dt;
+  if (lightning.timer <= 0) { lightning.flash = 1; lightning.timer = rand(6, 18); }
+  lightning.flash *= 0.88;
+  mist.forEach(m => {
+    m.x += (wind.strength * m.speed + Math.sin(m.phase) * 5) * dt;
+    m.phase += dt;
+    if (m.x > W + m.size) m.x = -m.size;
+    if (m.x < -m.size) m.x = W + m.size;
+  });
+}
+
+function draw(t) {
+  const ts = t * 0.001;
+  const sky = cx.createLinearGradient(0, 0, 0, H);
+  const flashBoost = lightning.flash * 0.15;
+  sky.addColorStop(0, `rgba(${12 + flashBoost * 80}, ${14 + flashBoost * 80}, ${28 + flashBoost * 100}, 1)`);
+  sky.addColorStop(0.5, `rgba(${18 + flashBoost * 60}, ${22 + flashBoost * 60}, ${38 + flashBoost * 70}, 1)`);
+  sky.addColorStop(0.8, `rgba(${22 + flashBoost * 40}, ${26 + flashBoost * 40}, ${42 + flashBoost * 50}, 1)`);
+  sky.addColorStop(1, `rgba(${16 + flashBoost * 30}, ${18 + flashBoost * 30}, ${30 + flashBoost * 40}, 1)`);
+  cx.fillStyle = sky;
+  cx.fillRect(0, 0, W, H);
+  cx.globalAlpha = 0.03 + lightning.flash * 0.05;
+  cx.fillStyle = '#8899bb';
+  for (let i = 0; i < 60; i++) {
+    const bx = (i * 37.7 + ts * 40) % (W + 100) - 50;
+    const by = rand(0, H * 0.75);
+    cx.fillRect(bx + wind.strength * 15, by, 0.5, rand(30, 80));
+  }
+  cx.globalAlpha = 1;
+  const gY = groundY();
+  const gGrad = cx.createLinearGradient(0, gY - 5, 0, H);
+  gGrad.addColorStop(0, '#151a28');
+  gGrad.addColorStop(0.3, '#111622');
+  gGrad.addColorStop(1, '#0d111c');
+  cx.fillStyle = gGrad;
+  cx.fillRect(0, gY - 2, W, H - gY + 2);
+  puddles.forEach(p => {
+    const shimmer = Math.sin(ts * p.speed + p.shimmer) * 0.5 + 0.5;
+    const grad = cx.createRadialGradient(p.x, gY + 2, 0, p.x, gY + 2, p.w);
+    grad.addColorStop(0, `rgba(100,120,160,${0.04 + shimmer * 0.03 + lightning.flash * 0.1})`);
+    grad.addColorStop(1, 'rgba(100,120,160,0)');
+    cx.fillStyle = grad;
+    cx.fillRect(p.x - p.w, gY - 1, p.w * 2, 10);
+  });
+  ripples.forEach(r => {
+    cx.strokeStyle = `rgba(140,170,220,${r.life * 0.35})`;
+    cx.lineWidth = 1;
+    cx.beginPath();
+    cx.ellipse(r.x, r.y, r.radius, r.radius * 0.35, 0, 0, Math.PI * 2);
+    cx.stroke();
+  });
+  mist.forEach(m => {
+    cx.globalAlpha = m.alpha + lightning.flash * 0.02;
+    const mGrad = cx.createRadialGradient(m.x, m.y, 0, m.x, m.y, m.size);
+    mGrad.addColorStop(0, 'rgba(120,140,170,0.5)');
+    mGrad.addColorStop(1, 'rgba(120,140,170,0)');
+    cx.fillStyle = mGrad;
+    cx.fillRect(m.x - m.size, m.y - m.size * 0.5, m.size * 2, m.size);
+    cx.globalAlpha = 1;
+  });
+  umbrella.draw();
+  cx.save();
+  const shadowAlpha = 0.06 + lightning.flash * 0.08;
+  const sGrad = cx.createRadialGradient(umbrella.x, gY + 3, 0, umbrella.x, gY + 3, umbrella.radius * 0.8);
+  sGrad.addColorStop(0, `rgba(180,50,60,${shadowAlpha})`);
+  sGrad.addColorStop(1, 'rgba(180,50,60,0)');
+  cx.fillStyle = sGrad;
+  cx.beginPath();
+  cx.ellipse(umbrella.x + umbrella.tilt * 30, gY + 3, umbrella.radius * 0.7, 8, 0, 0, Math.PI * 2);
+  cx.fill();
+  cx.restore();
+  cx.lineCap = 'round';
+  drops.forEach(d => {
+    const speed = Math.hypot(d.vx, d.vy);
+    const dx = d.vx / speed;
+    const dy = d.vy / speed;
+    cx.strokeStyle = `rgba(160,185,220,${d.alpha + lightning.flash * 0.2})`;
+    cx.lineWidth = d.width;
+    cx.beginPath();
+    cx.moveTo(d.x, d.y);
+    cx.lineTo(d.x - dx * d.len, d.y - dy * d.len);
+    cx.stroke();
+  });
+  splashes.forEach(s => {
+    cx.globalAlpha = s.life * 0.7;
+    cx.fillStyle = '#a0bde0';
+    cx.beginPath();
+    cx.arc(s.x, s.y, s.size * s.life, 0, Math.PI * 2);
+    cx.fill();
+  });
+  cx.globalAlpha = 1;
+  drips.forEach(d => {
+    cx.globalAlpha = d.life * 0.6;
+    cx.fillStyle = '#8aaad0';
+    cx.beginPath();
+    cx.ellipse(d.x, d.y, d.size * 0.6, d.size, 0, 0, Math.PI * 2);
+    cx.fill();
+  });
+  cx.globalAlpha = 1;
+  if (lightning.flash > 0.01) {
+    cx.fillStyle = `rgba(200,210,240,${lightning.flash * 0.08})`;
+    cx.fillRect(0, 0, W, H);
+  }
+  const vig = cx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.25, W / 2, H / 2, Math.max(W, H) * 0.75);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.45)');
+  cx.fillStyle = vig;
+  cx.fillRect(0, 0, W, H);
+}
+
+let last = 0;
+function loop(t) {
+  const dt = Math.min((t - last) / 1000, 0.05);
+  last = t;
+  update(dt);
+  draw(t);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

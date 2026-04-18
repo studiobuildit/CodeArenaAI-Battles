@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ocean Waves Animation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            width: 100vw;
+            height: 100vh;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="oceanCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('oceanCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height, dpr = 1;
+        let increment = 0;
+
+        const waves = [
+            { amplitude: 50, frequency: 0.01, speed: 0.02, color: 'rgba(0, 77, 153, 0.5)', offset: 0 },
+            { amplitude: 40, frequency: 0.015, speed: 0.03, color: 'rgba(0, 119, 182, 0.6)', offset: 100 },
+            { amplitude: 30, frequency: 0.02, speed: 0.04, color: 'rgba(0, 150, 199, 0.7)', offset: 200 },
+            { amplitude: 20, frequency: 0.025, speed: 0.05, color: 'rgba(72, 202, 228, 0.8)', offset: 300, hasFoam: true }
+        ];
+
+        function init() {
+            dpr = Math.max(1, window.devicePixelRatio || 1);
+            width = Math.max(1, window.innerWidth);
+            height = Math.max(1, window.innerHeight);
+            canvas.width = Math.floor(width * dpr);
+            canvas.height = Math.floor(height * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        function drawBackground() {
+            const skyGradient = ctx.createLinearGradient(0, 0, 0, height);
+            skyGradient.addColorStop(0, '#ff7e5f');
+            skyGradient.addColorStop(0.3, '#feb47b');
+            skyGradient.addColorStop(0.5, '#83a4d4');
+            skyGradient.addColorStop(1, '#b6fbff');
+
+            ctx.fillStyle = skyGradient;
+            ctx.fillRect(0, 0, width, height);
+        }
+
+        function drawWave(wave, index) {
+            ctx.beginPath();
+            ctx.moveTo(0, height);
+
+            const baseY = height * 0.6 + (index * 40);
+
+            for (let x = 0; x <= width; x++) {
+                const y = baseY + Math.sin(x * wave.frequency + increment * wave.speed + wave.offset) * wave.amplitude;
+                ctx.lineTo(x, y);
+
+                if (wave.hasFoam && x % 20 === 0) {
+                    const foamSize = Math.random() * 3 + 2;
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+                    if (y < baseY - (wave.amplitude * 0.5)) {
+                        ctx.fillRect(x, y - 5, foamSize, foamSize);
+                    }
+                }
+            }
+
+            ctx.lineTo(width, height);
+            ctx.lineTo(0, height);
+            ctx.fillStyle = wave.color;
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            drawBackground();
+
+            waves.forEach((wave, index) => drawWave(wave, index));
+
+            increment += 1;
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', init);
+        init();
+        animate();
+    </script>
+</body>
+</html>

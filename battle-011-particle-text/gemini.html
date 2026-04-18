@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Particle Text</title>
+<style>
+body { margin: 0; background: #0a0a0a; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="540" height="960"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 540, H = 960;
+
+const particles = [];
+const particleCount = 2500;
+let phase = 'scatter';
+let phaseTimer = 0;
+const targets = [];
+
+function initTargets() {
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = W;
+    offCanvas.height = H;
+    const offCtx = offCanvas.getContext('2d');
+    
+    offCtx.fillStyle = '#fff';
+    offCtx.font = 'bold 280px Arial, sans-serif';
+    offCtx.textAlign = 'center';
+    offCtx.textBaseline = 'middle';
+    offCtx.fillText('AI', W/2, H/2);
+    
+    const imageData = offCtx.getImageData(0, 0, W, H);
+    const data = imageData.data;
+    
+    for (let y = 0; y < H; y += 3) {
+        for (let x = 0; x < W; x += 3) {
+            const idx = (y * W + x) * 4;
+            if (data[idx + 3] > 128) {
+                targets.push({x, y});
+            }
+        }
+    }
+    
+    for (let i = targets.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [targets[i], targets[j]] = [targets[j], targets[i]];
+    }
+}
+
+class Particle {
+    constructor(index) {
+        this.index = index;
+        this.reset();
+    }
+    
+    reset() {
+        this.x = Math.random() * W;
+        this.y = Math.random() * H;
+        this.vx = (Math.random() - 0.5) * 10;
+        this.vy = (Math.random() - 0.5) * 10;
+        this.size = Math.random() * 2 + 1;
+        this.targetX = 0;
+        this.targetY = 0;
+        this.arrived = false;
+        this.floatOffset = Math.random() * Math.PI * 2;
+    }
+    
+    setTarget() {
+        if (this.index < targets.length) {
+            this.targetX = targets[this.index].x;
+            this.targetY = targets[this.index].y;
+        } else {
+            const angle = (this.index / particleCount) * Math.PI * 2;
+            const radius = 150 + Math.random() * 100;
+            this.targetX = W/2 + Math.cos(angle) * radius;
+            this.targetY = H/2 + Math.sin(angle) * radius;
+        }
+    }
+    
+    update() {
+        if (phase === 'scatter') {
+            this.x += this.vx;
+            this.y += this.vy;
+            this.vx *= 0.95;
+            this.vy *= 0.95;
+            if (this.x < 0 || this.x > W) this.vx *= -1;
+            if (this.y < 0 || this.y > H) this.vy *= -1;
+            
+        } else if (phase === 'assemble') {
+            const dx = this.targetX - this.x;
+            const dy = this.targetY - this.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            
+            const speed = Math.max(2, dist * 0.05);
+            this.x += (dx / dist) * speed;
+            this.y += (dy / dist) * speed;
+            
+            if (dist < 5) this.arrived = true;
+            
+        } else if (phase === 'float') {
+            const time = Date.now() * 0.001;
+            this.x = this.targetX + Math.sin(time + this.floatOffset) * 3;
+            this.y = this.targetY + Math.cos(time * 0.7 + this.floatOffset) * 3;
+        }
+    }
+    
+    draw() {
+        const alpha = phase === 'scatter' ? 0.6 : 0.9;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowBlur = phase === 'float' ? 8 : 4;
+        ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+    }
+}
+
+function init() {
+    initTargets();
+    for (let i = 0; i < particleCount; i++) {
+        particles.push(new Particle(i));
+    }
+    
+    setTimeout(() => {
+        phase = 'assemble';
+        particles.forEach(p => p.setTarget());
+    }, 1500);
+}
+
+function animate() {
+    ctx.fillStyle = 'rgba(10, 10, 10, 0.15)';
+    ctx.fillRect(0, 0, W, H);
+    
+    if (phase === 'assemble') {
+        const arrivedCount = particles.filter(p => p.arrived).length;
+        if (arrivedCount > particleCount * 0.95) {
+            phase = 'float';
+            phaseTimer = Date.now();
+        }
+    }
+    
+    if (phase === 'float' && Date.now() - phaseTimer > 4000) {
+        phase = 'scatter';
+        particles.forEach(p => {
+            p.vx = (Math.random() - 0.5) * 15;
+            p.vy = (Math.random() - 0.5) * 15;
+            p.arrived = false;
+        });
+        setTimeout(() => {
+            phase = 'assemble';
+            particles.forEach(p => p.setTarget());
+        }, 1500);
+    }
+    
+    particles.forEach(p => {
+        p.update();
+        p.draw();
+    });
+    
+    requestAnimationFrame(animate);
+}
+
+init();
+animate();
+</script>
+</body>
+</html>

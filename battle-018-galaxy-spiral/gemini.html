@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spiral Galaxy</title>
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #000;
+}
+canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const W = 540, H = 960;
+let dpr = window.devicePixelRatio || 1;
+let vpw = window.innerWidth;
+let vph = window.innerHeight;
+
+function resize() {
+    dpr = window.devicePixelRatio || 1;
+    vpw = window.innerWidth;
+    vph = window.innerHeight;
+    canvas.width = Math.floor(vpw * dpr);
+    canvas.height = Math.floor(vph * dpr);
+}
+
+window.addEventListener('resize', resize);
+resize();
+
+const CX = W / 2;
+const CY = H / 2;
+const numStars = 4000;
+const numDust = 800;
+const stars = [];
+const dust = [];
+let rotation = 0;
+
+class Star {
+    constructor() {
+        this.reset();
+    }
+    
+    reset() {
+        const arm = Math.floor(Math.random() * 2);
+        const armOffset = arm * Math.PI + (Math.random() - 0.5) * 0.5;
+        const distance = Math.random() * 220 + 20;
+        const spiralTightness = 0.15;
+        
+        this.angle = armOffset + distance * spiralTightness + (Math.random() - 0.5) * 0.8;
+        this.distance = distance * (0.7 + Math.random() * 0.6);
+        this.size = Math.random() * 1.5 + 0.5;
+        this.brightness = Math.random() * 0.6 + 0.4;
+        this.twinkle = Math.random() * Math.PI * 2;
+        this.twinkleSpeed = Math.random() * 0.02 + 0.01;
+        this.color = this.getColor();
+    }
+    
+    getColor() {
+        const r = Math.random();
+        if (r < 0.7) return { r: 200, g: 220, b: 255 };
+        if (r < 0.85) return { r: 255, g: 240, b: 200 };
+        return { r: 255, g: 200, b: 180 };
+    }
+    
+    update() {
+        this.twinkle += this.twinkleSpeed;
+    }
+    
+    getPosition(rot) {
+        const a = this.angle + rot;
+        const d = this.distance;
+        return {
+            x: CX + Math.cos(a) * d,
+            y: CY + Math.sin(a) * d * 0.6
+        };
+    }
+}
+
+class DustParticle {
+    constructor() {
+        const arm = Math.floor(Math.random() * 2);
+        const armOffset = arm * Math.PI + 0.3;
+        const distance = Math.random() * 180 + 40;
+        
+        this.angle = armOffset + distance * 0.12 + (Math.random() - 0.5) * 0.4;
+        this.distance = distance;
+        this.size = Math.random() * 3 + 2;
+        this.opacity = Math.random() * 0.3 + 0.1;
+    }
+    
+    getPosition(rot) {
+        const a = this.angle + rot;
+        return {
+            x: CX + Math.cos(a) * this.distance,
+            y: CY + Math.sin(a) * this.distance * 0.6
+        };
+    }
+}
+
+for (let i = 0; i < numStars; i++) stars.push(new Star());
+for (let i = 0; i < numDust; i++) dust.push(new DustParticle());
+
+function drawCore() {
+    const coreGrad = ctx.createRadialGradient(CX, CY, 0, CX, CY, 80);
+    coreGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    coreGrad.addColorStop(0.1, 'rgba(255, 240, 200, 0.9)');
+    coreGrad.addColorStop(0.3, 'rgba(255, 200, 100, 0.6)');
+    coreGrad.addColorStop(0.6, 'rgba(255, 150, 50, 0.3)');
+    coreGrad.addColorStop(1, 'transparent');
+    
+    ctx.fillStyle = coreGrad;
+    ctx.beginPath();
+    ctx.arc(CX, CY, 80, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.beginPath();
+    ctx.arc(CX, CY, 15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+}
+
+function drawBackground() {
+    const bgGrad = ctx.createRadialGradient(CX, CY, 0, CX, CY, Math.max(W, H));
+    bgGrad.addColorStop(0, '#0a0a15');
+    bgGrad.addColorStop(0.5, '#050508');
+    bgGrad.addColorStop(1, '#000');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, W, H);
+}
+
+function animate() {
+    ctx.setTransform((vpw/W) * dpr, 0, 0, (vph/H) * dpr, 0, 0);
+    
+    drawBackground();
+    
+    rotation += 0.002;
+    
+    ctx.globalCompositeOperation = 'lighter';
+    
+    dust.forEach(d => {
+        const pos = d.getPosition(rotation * 0.7);
+        ctx.fillStyle = `rgba(80, 60, 100, ${d.opacity})`;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, d.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    stars.forEach(s => {
+        s.update();
+        const pos = s.getPosition(rotation);
+        const twinkleAlpha = 0.7 + Math.sin(s.twinkle) * 0.3;
+        const alpha = s.brightness * twinkleAlpha;
+        
+        const { r, g, b } = s.color;
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, s.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    ctx.globalCompositeOperation = 'source-over';
+    
+    drawCore();
+    
+    requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>

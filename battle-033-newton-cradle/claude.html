@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Newton's Cradle</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+  }
+  #wrap {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+  #game {
+    display: block;
+    background: #000;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+</div>
+<script>
+(() => {
+  const LOGICAL_W = 540;
+  const LOGICAL_H = 960;
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const ratio = LOGICAL_W / LOGICAL_H;
+    let cssW, cssH;
+    if (vw / vh > ratio) {
+      cssH = vh;
+      cssW = vh * ratio;
+    } else {
+      cssW = vw;
+      cssH = vw / ratio;
+    }
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    canvas.width = Math.floor(LOGICAL_W * dpr);
+    canvas.height = Math.floor(LOGICAL_H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const W = LOGICAL_W;
+  const H = LOGICAL_H;
+
+  // ============== CRADLE SETUP ==============
+  const NUM_BALLS = 5;
+  const BALL_R = 32;
+  const BALL_SPACING = BALL_R * 2 + 1; // barely touching when at rest
+  const ROPE_LEN = 360;
+
+  // Frame (top bar where ropes hang)
+  const frameY = 150;
+  const frameLeft = 60;
+  const frameRight = W - 60;
+  const frameBarY = frameY;
+
+  const centerX = W / 2;
+  const firstX = centerX - ((NUM_BALLS - 1) * BALL_SPACING) / 2;
+
+  // Each ball has an anchor point on the bar (for front rope) and a second anchor
+  // (for a V-shaped rope, just for visual depth). The pendulum physics uses the
+  // anchor directly above its rest position.
+  const balls = [];
+  for (let i = 0; i < NUM_BALLS; i++) {
+    const restX = firstX + i * BALL_SPACING;
+    balls.push({
+      index: i,
+      anchorX: restX,
+      anchorY: frameBarY,
+      // Angle from vertical. 0 = straight down.
+      angle: 0,
+      angVel: 0,
+      // Second anchor for V-ropes (for visual)
+      anchor2X: restX + 14, // creates perspective via V-shape
+      x: restX,
+      y: frameBarY + ROPE_LEN,
+      restX: restX,
+      flash: 0,
+      highlighted: false
+    });
+  }
+
+  // Set initial conditions: left-most ball pulled back
+  const INITIAL_ANGLE = -0.75; // radians from vertical
+  balls[0].angle = INITIAL_ANGLE;
+  balls[0].angVel = 0;
+
+  // Energy tracking for auto-restart
+  let energyLossCounter = 0;
+  let restartTimer = 0;
+  let restartCountdown = 0;
+  let swingCount = 0;
+  let lastSide = -1; // -1 = started on left
+  let flashOverlay = 0;
+
+  // Contact spark particles
+  const sparks = [];
+
+  // Background dust motes for atmosphere
+  const motes = [];
+  for (let i = 0; i < 40; i++) {
+    motes.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: 0.5 + Math.random() * 1.2,
+      vx: (Math.random() - 0.5) * 0.15,
+      vy: -0.05 - Math.random() * 0.08,
+      alpha: 0.1 + Math.random() * 0.3,
+      tw: Math.random() * Math.PI * 2
+    });
+  }
+
+  // State: 'leftSwinging', 'rightSwinging', 'transferring' (very brief), 'contact'
+  let mode = 'leftSwinging'; // initial: ball 0 pulled to the left
+  let targetBall = 0;
+  let damping = 0.9975;
+  let gravity = 0.012;
+  let contactFlashTime = 0;
+
+  function updatePhysics() {
+    // Animate only the "target" ball with pendulum physics.
+    const b = balls[targetBall];
+    // Pendulum equation
+    const accel = -gravity * Math.sin(b.angle);
+    b.angVel += accel;
+    b.angVel *= damping;
+    b.angle += b.angVel;
+
+    // Compute position
+    b.x = b.anchorX + Math.sin(b.angle) * ROPE_LEN;
+    b.y = b.anchorY + Math.cos(b.angle) * ROPE_LEN;
+
+    if (targetBall === 0) {
+      if (b.angle >= 0 && b.angVel > 0) {
+        handleContact(0, NUM_BALLS - 1, b.angVel);
+      }
+    } else if (targetBall === NUM_BALLS - 1) {
+      if (b.angle <= 0 && b.angVel < 0) {
+        handleContact(NUM_BALLS - 1, 0, b.angVel);
+      }
+    }
+
+    for (let i = 0; i < balls.length; i++) {
+      if (i === targetBall) continue;
+      const s = balls[i];
+      s.angle *= 0.9;
+      s.angVel *= 0.9;
+      s.x = s.anchorX + Math.sin(s.angle) * ROPE_LEN;
+      s.y = s.anchorY + Math.cos(s.angle) * ROPE_LEN;
+    }
+
+    for (const ball of balls) {
+      if (ball.flash > 0) ball.flash -= 0.04;
+    }
+    if (contactFlashTime > 0) contactFlashTime -= 1;
+    if (flashOverlay > 0) flashOverlay -= 0.05;
+  }
+
+  function handleContact(fromIdx, toIdx, incomingVel) {
+    const loss = 0.985;
+    const transferVel = Math.abs(incomingVel) * loss;
+
+    const b = balls[fromIdx];
+    b.angle = 0;
+    b.angVel = 0;
+    b.x = b.anchorX;
+    b.y = b.anchorY + ROPE_LEN;
+
+    for (const ball of balls) {
+      ball.flash = 0.6;
+    }
+
+    for (let i = 0; i < NUM_BALLS - 1; i++) {
+      const mid = {
+        x: (balls[i].x + balls[i + 1].x) / 2,
+        y: (balls[i].y + balls[i + 1].y) / 2
+      };
+      const delay = i * 2;
+      setTimeout(() => spawnSpark(mid.x, mid.y), delay * 8);
+    }
+
+    contactFlashTime = 8;
+    flashOverlay = 0.3;
+
+    const target = balls[toIdx];
+    targetBall = toIdx;
+    if (toIdx === 0) {
+      target.angVel = -transferVel;
+    } else {
+      target.angVel = transferVel;
+    }
+
+    swingCount++;
+
+    if (transferVel < 0.03) {
+      restartCountdown = 90;
+    }
+  }
+
+  function spawnSpark(x, y) {
+    const num = 8 + Math.floor(Math.random() * 6);
+    for (let i = 0; i < num; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 1 + Math.random() * 3;
+      sparks.push({
+        x, y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        r: 0.8 + Math.random() * 1.5,
+        life: 1,
+        decay: 0.04 + Math.random() * 0.03,
+        hue: 45 + Math.random() * 15
+      });
+    }
+    sparks.push({
+      x, y,
+      isRing: true,
+      r: 2,
+      maxR: 22 + Math.random() * 10,
+      life: 1,
+      decay: 0.08
+    });
+  }
+
+  function updateSparks() {
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const s = sparks[i];
+      if (s.isRing) {
+        s.r += (s.maxR - s.r) * 0.25;
+        s.life -= s.decay;
+      } else {
+        s.x += s.vx;
+        s.y += s.vy;
+        s.vy += 0.08;
+        s.vx *= 0.98;
+        s.life -= s.decay;
+      }
+      if (s.life <= 0) sparks.splice(i, 1);
+    }
+  }
+
+  function updateMotes() {
+    for (const m of motes) {
+      m.x += m.vx;
+      m.y += m.vy;
+      m.tw += 0.03;
+      if (m.y < -5) { m.y = H + 5; m.x = Math.random() * W; }
+      if (m.x < -5) m.x = W + 5;
+      if (m.x > W + 5) m.x = -5;
+    }
+  }
+
+  function checkAutoRestart() {
+    const b = balls[targetBall];
+    const maxAngle = Math.abs(b.angle);
+    const maxVel = Math.abs(b.angVel);
+
+    if (maxAngle < 0.05 && maxVel < 0.01) {
+      restartCountdown--;
+      if (restartCountdown <= 0) {
+        restartAnimation();
+      }
+    } else {
+      if (maxAngle < 0.2 && maxVel < 0.015) {
+        restartCountdown--;
+        if (restartCountdown <= 0) {
+          restartAnimation();
+        }
+      } else {
+        restartCountdown = 120;
+      }
+    }
+  }
+
+  function restartAnimation() {
+    const side = Math.random() < 0.5 ? 0 : NUM_BALLS - 1;
+    for (const ball of balls) {
+      ball.angle = 0;
+      ball.angVel = 0;
+      ball.x = ball.anchorX;
+      ball.y = ball.anchorY + ROPE_LEN;
+      ball.flash = 0;
+    }
+    if (side === 0) {
+      balls[0].angle = -0.75;
+    } else {
+      balls[NUM_BALLS - 1].angle = 0.75;
+    }
+    targetBall = side;
+    restartCountdown = 0;
+    swingCount = 0;
+    flashOverlay = 0.4;
+  }
+
+  function drawBackground() {
+    const g = ctx.createRadialGradient(W / 2, H / 2, 100, W / 2, H / 2, 700);
+    g.addColorStop(0, '#0a0e18');
+    g.addColorStop(0.7, '#05060c');
+    g.addColorStop(1, '#000000');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    if (flashOverlay > 0) {
+      ctx.fillStyle = `rgba(255, 240, 200, ${flashOverlay * 0.2})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    ctx.strokeStyle = 'rgba(100, 140, 200, 0.03)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 40) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = 0; y < H; y += 40) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+
+    for (const m of motes) {
+      const alpha = m.alpha * (0.6 + Math.sin(m.tw) * 0.4);
+      ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawFrame() {
+    const postTopY = 80;
+    const postBotY = frameBarY + 10;
+
+    ctx.fillStyle = '#2a2a38';
+    ctx.fillRect(frameLeft - 6, postTopY, 12, postBotY - postTopY);
+    ctx.fillRect(frameRight - 6, postTopY, 12, postBotY - postTopY);
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.fillRect(frameLeft - 4, postTopY, 2, postBotY - postTopY);
+    ctx.fillRect(frameRight - 4, postTopY, 2, postBotY - postTopY);
+
+    ctx.fillStyle = '#1a1a24';
+    ctx.fillRect(frameLeft - 20, postBotY, 40, 8);
+    ctx.fillRect(frameRight - 20, postBotY, 40, 8);
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(frameLeft - 22, postBotY + 8, 44, 3);
+    ctx.fillRect(frameRight - 22, postBotY + 8, 44, 3);
+
+    const barHeight = 10;
+    ctx.fillStyle = '#3a3a48';
+    ctx.fillRect(frameLeft, frameBarY - 12, frameRight - frameLeft, barHeight);
+    ctx.fillStyle = '#4a4a58';
+    ctx.fillRect(frameLeft, frameBarY - 2, frameRight - frameLeft, barHeight);
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.fillRect(frameLeft, frameBarY - 12, frameRight - frameLeft, 2);
+    ctx.fillRect(frameLeft, frameBarY - 2, frameRight - frameLeft, 2);
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.fillRect(frameLeft, frameBarY + 6, frameRight - frameLeft, 2);
+
+    ctx.fillStyle = '#5a5a68';
+    ctx.beginPath();
+    ctx.arc(frameLeft, frameBarY + 3, 6, 0, Math.PI * 2);
+    ctx.arc(frameRight, frameBarY + 3, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#2a2a38';
+    ctx.beginPath();
+    ctx.arc(frameLeft, frameBarY + 3, 3, 0, Math.PI * 2);
+    ctx.arc(frameRight, frameBarY + 3, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawRopes() {
+    ctx.strokeStyle = 'rgba(180, 180, 200, 0.75)';
+    ctx.lineWidth = 1.2;
+    for (const b of balls) {
+      const anchor1 = { x: b.anchorX - 8, y: frameBarY + 3 };
+      const anchor2 = { x: b.anchorX + 8, y: frameBarY + 3 };
+
+      ctx.beginPath();
+      ctx.moveTo(anchor1.x, anchor1.y);
+      ctx.lineTo(b.x - 2, b.y);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(140, 140, 160, 0.55)';
+      ctx.beginPath();
+      ctx.moveTo(anchor2.x, anchor2.y);
+      ctx.lineTo(b.x + 2, b.y);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(180, 180, 200, 0.75)';
+    }
+  }
+
+  function drawBall(b) {
+    const x = b.x;
+    const y = b.y;
+    const r = BALL_R;
+
+    const floorY = frameBarY + ROPE_LEN + BALL_R + 40;
+    if (floorY < H) {
+      const shadowStretch = Math.abs(Math.sin(b.angle)) * 0.6;
+      ctx.fillStyle = `rgba(0, 0, 0, ${0.15 - shadowStretch * 0.05})`;
+      ctx.beginPath();
+      ctx.ellipse(b.anchorX, floorY, r * (1 + shadowStretch), r * 0.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.beginPath();
+    ctx.arc(x + 3, y + 3, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    const grad = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, 2, x, y, r);
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(0.15, '#dde4ee');
+    grad.addColorStop(0.4, '#8a93a3');
+    grad.addColorStop(0.7, '#3a4050');
+    grad.addColorStop(0.9, '#1a1e28');
+    grad.addColorStop(1, '#0a0c12');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    const horizon = ctx.createLinearGradient(x, y - r * 0.1, x, y + r * 0.4);
+    horizon.addColorStop(0, 'rgba(100, 120, 150, 0)');
+    horizon.addColorStop(0.4, 'rgba(180, 200, 230, 0.4)');
+    horizon.addColorStop(0.5, 'rgba(220, 235, 255, 0.6)');
+    horizon.addColorStop(0.6, 'rgba(180, 200, 230, 0.4)');
+    horizon.addColorStop(1, 'rgba(100, 120, 150, 0)');
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r - 1, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = horizon;
+    ctx.fillRect(x - r, y - r * 0.15, r * 2, r * 0.6);
+    ctx.restore();
+
+    const spec = ctx.createRadialGradient(x - r * 0.35, y - r * 0.45, 0, x - r * 0.35, y - r * 0.45, r * 0.55);
+    spec.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+    spec.addColorStop(0.5, 'rgba(255, 255, 255, 0.3)');
+    spec.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = spec;
+    ctx.beginPath();
+    ctx.ellipse(x - r * 0.35, y - r * 0.45, r * 0.35, r * 0.28, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(180, 190, 210, 0.25)';
+    ctx.beginPath();
+    ctx.ellipse(x + r * 0.2, y + r * 0.55, r * 0.28, r * 0.08, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(x, y, r - 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    if (b.flash > 0) {
+      ctx.fillStyle = `rgba(255, 240, 180, ${b.flash * 0.4})`;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      const glow = ctx.createRadialGradient(x, y, r, x, y, r * 2);
+      glow.addColorStop(0, `rgba(255, 220, 120, ${b.flash * 0.5})`);
+      glow.addColorStop(1, 'rgba(255, 180, 60, 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(x, y, r * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawSparks() {
+    for (const s of sparks) {
+      if (s.isRing) {
+        ctx.strokeStyle = `rgba(255, 220, 120, ${s.life * 0.8})`;
+        ctx.lineWidth = 2 * s.life;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = `hsla(${s.hue}, 90%, ${60 + s.life * 30}%, ${s.life})`;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = `hsla(${s.hue}, 90%, 70%, ${s.life * 0.5})`;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(s.x - s.vx * 3, s.y - s.vy * 3);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function drawHUD() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, W, 48);
+    ctx.strokeStyle = 'rgba(150, 180, 220, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 48);
+    ctx.lineTo(W, 48);
+    ctx.stroke();
+
+    ctx.fillStyle = '#aaccff';
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('⬢ NEWTON\'S CRADLE', 16, 28);
+
+    ctx.fillStyle = '#888';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText('CONSERVATION OF MOMENTUM', 16, 42);
+
+    ctx.fillStyle = '#ffdd66';
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`SWINGS ${swingCount.toString().padStart(3, '0')}`, W - 16, 28);
+
+    const b = balls[targetBall];
+    const energy = Math.min(1, Math.abs(b.angVel) * 20 + Math.abs(b.angle) * 0.5);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.fillRect(W - 110, 36, 94, 6);
+    const hue = 200 - energy * 200;
+    ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
+    ctx.fillRect(W - 110, 36, 94 * energy, 6);
+    ctx.strokeStyle = 'rgba(150, 180, 220, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(W - 110, 36, 94, 6);
+
+    ctx.fillStyle = '#444';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('AUTO-LOOP DEMONSTRATION', W / 2, H - 20);
+  }
+
+  function loop() {
+    updatePhysics();
+    updateSparks();
+    updateMotes();
+    checkAutoRestart();
+
+    drawBackground();
+    drawFrame();
+    drawRopes();
+    for (const b of balls) drawBall(b);
+    drawSparks();
+    drawHUD();
+
+    requestAnimationFrame(loop);
+  }
+  loop();
+})();
+</script>
+</body>
+</html>

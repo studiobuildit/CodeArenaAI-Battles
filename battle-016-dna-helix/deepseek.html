@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D DNA Double Helix | Rotating</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: black;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: black;
+        }
+    </style>
+</head>
+<body>
+<canvas id="dnaCanvas"></canvas>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('dnaCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const W = 540;
+        const H = 960;
+        
+        const CENTER_X = W / 2;
+        const TOP_Y = H * 0.18;
+        const BOTTOM_Y = H * 0.82;
+        const HELIX_HEIGHT = BOTTOM_Y - TOP_Y;
+        const RADIUS = W * 0.18;
+        const TURNS = 2.8;
+        const SEGMENTS = 180;
+        
+        let rotationAngle = 0;
+        const ROTATION_SPEED = 0.007;
+        
+        let strand1Points = [];
+        let strand2Points = [];
+        let rungs = [];
+        
+        function computeHelixPoints() {
+            strand1Points = [];
+            strand2Points = [];
+            rungs = [];
+            
+            for (let i = 0; i <= SEGMENTS; i++) {
+                const t = i / SEGMENTS;
+                const y = TOP_Y + t * HELIX_HEIGHT;
+                const angleOffset = t * Math.PI * 2 * TURNS;
+                const x1_3d = Math.cos(angleOffset) * RADIUS;
+                const z1_3d = Math.sin(angleOffset) * RADIUS;
+                const x2_3d = Math.cos(angleOffset + Math.PI) * RADIUS;
+                const z2_3d = Math.sin(angleOffset + Math.PI) * RADIUS;
+                
+                const rot = rotationAngle;
+                const cosRot = Math.cos(rot);
+                const sinRot = Math.sin(rot);
+                
+                const x1_rot = x1_3d * cosRot - z1_3d * sinRot;
+                const z1_rot = x1_3d * sinRot + z1_3d * cosRot;
+                const x2_rot = x2_3d * cosRot - z2_3d * sinRot;
+                const z2_rot = x2_3d * sinRot + z2_3d * cosRot;
+                
+                const projX1 = CENTER_X + x1_rot;
+                const projY1 = y;
+                const projX2 = CENTER_X + x2_rot;
+                const projY2 = y;
+                
+                const point1 = { x: projX1, y: projY1, z: z1_rot, t: t };
+                const point2 = { x: projX2, y: projY2, z: z2_rot, t: t };
+                
+                strand1Points.push(point1);
+                strand2Points.push(point2);
+                
+                if (i < SEGMENTS) {
+                    rungs.push({
+                        x1: projX1, y1: projY1, z1: z1_rot,
+                        x2: projX2, y2: projY2, z2: z2_rot,
+                        t: t
+                    });
+                }
+            }
+        }
+
+        function drawBackground() {
+            const grad = ctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, "#030614");
+            grad.addColorStop(1, "#010208");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+            
+            const glowGrad = ctx.createRadialGradient(CENTER_X, H/2, 20, CENTER_X, H/2, 220);
+            glowGrad.addColorStop(0, "rgba(30, 60, 120, 0.15)");
+            glowGrad.addColorStop(1, "rgba(0,0,0,0)");
+            ctx.fillStyle = glowGrad;
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        function drawRungs() {
+            for (let rung of rungs) {
+                const depthFactor = (rung.z1 + rung.z2) / (RADIUS * 1.5);
+                const brightness = Math.max(0.25, Math.min(0.9, 0.55 - depthFactor * 0.3));
+                
+                ctx.beginPath();
+                ctx.moveTo(rung.x1, rung.y1);
+                ctx.lineTo(rung.x2, rung.y2);
+                ctx.strokeStyle = `rgba(180, 220, 255, ${0.4 + brightness * 0.35})`;
+                ctx.lineWidth = 1.5 + (1 - Math.abs(depthFactor)) * 1.2;
+                ctx.shadowBlur = 3;
+                ctx.shadowColor = `rgba(100, 180, 255, 0.4)`;
+                ctx.stroke();
+            }
+        }
+
+        function drawStrand(points, baseColor, isRed) {
+            if (points.length < 2) return;
+            
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                ctx.lineTo(points[i].x, points[i].y);
+            }
+            
+            const gradient = ctx.createLinearGradient(0, TOP_Y, 0, BOTTOM_Y);
+            if (isRed) {
+                gradient.addColorStop(0, "#ff3355");
+                gradient.addColorStop(0.5, "#ff6688");
+                gradient.addColorStop(1, "#cc2244");
+            } else {
+                gradient.addColorStop(0, "#33aaff");
+                gradient.addColorStop(0.5, "#55ccff");
+                gradient.addColorStop(1, "#2288cc");
+            }
+            ctx.strokeStyle = gradient;
+            ctx.lineWidth = 4.2;
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = isRed ? "rgba(255, 80, 120, 0.7)" : "rgba(80, 160, 255, 0.7)";
+            ctx.stroke();
+            
+            for (let i = 0; i < points.length; i++) {
+                const p = points[i];
+                const depth = p.z;
+                const size = 3.5 + (RADIUS - Math.abs(depth)) / RADIUS * 2.5;
+                const alpha = 0.7 + (RADIUS - Math.abs(depth)) / RADIUS * 0.3;
+                
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+                ctx.fillStyle = isRed 
+                    ? `rgba(255, 100, 130, ${alpha})`
+                    : `rgba(100, 180, 255, ${alpha})`;
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(p.x - 1, p.y - 1, size * 0.35, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 220, 0.8)`;
+                ctx.fill();
+            }
+        }
+
+        let particles = [];
+        const PARTICLE_COUNT = 110;
+        
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.x = Math.random() * W;
+                this.y = Math.random() * H;
+                this.radius = Math.random() * 2 + 1;
+                this.vx = (Math.random() - 0.5) * 0.3;
+                this.vy = (Math.random() - 0.5) * 0.2 - 0.1;
+                this.life = Math.random() * 0.8 + 0.2;
+                this.hue = Math.random() > 0.7 ? 350 : 200;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= 0.002;
+                if (this.x < -20 || this.x > W + 20 || this.y < -20 || this.y > H + 20 || this.life <= 0.02) {
+                    this.reset();
+                    this.life = 0.9;
+                }
+                this.hue += 0.5;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${this.hue}, 85%, 65%, ${this.life * 0.5})`;
+                ctx.fill();
+            }
+        }
+
+        function initParticles() {
+            for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(new Particle());
+        }
+
+        let glowOrbs = [];
+        const ORB_COUNT = 28;
+        
+        class GlowOrb {
+            constructor() {
+                this.progress = Math.random();
+                this.speed = 0.002 + Math.random() * 0.003;
+                this.radius = 3 + Math.random() * 4;
+                this.hue = Math.random() > 0.5 ? 10 : 210;
+            }
+            update() {
+                this.progress += this.speed;
+                if (this.progress >= 1) this.progress = 0;
+                const idx = this.progress * SEGMENTS;
+                const idx1 = Math.floor(idx);
+                const idx2 = Math.min(idx1 + 1, SEGMENTS);
+                if (idx1 < strand1Points.length && idx2 < strand1Points.length) {
+                    const t = idx - idx1;
+                    const p1 = strand1Points[idx1];
+                    const p2 = strand1Points[idx2];
+                    this.x = p1.x + (p2.x - p1.x) * t;
+                    this.y = p1.y + (p2.y - p1.y) * t;
+                    const z1 = strand1Points[idx1].z;
+                    const z2 = strand1Points[idx2].z;
+                    this.zDepth = z1 + (z2 - z1) * t;
+                }
+            }
+            draw() {
+                if (this.x === undefined) return;
+                const brightness = 0.6 + (RADIUS - Math.abs(this.zDepth)) / RADIUS * 0.5;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * 0.8, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${this.hue}, 90%, 65%, ${brightness * 0.7})`;
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(this.x - 1, this.y - 1, this.radius * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 240, 180, 0.9)`;
+                ctx.fill();
+            }
+        }
+
+        function initOrbs() {
+            for (let i = 0; i < ORB_COUNT; i++) glowOrbs.push(new GlowOrb());
+        }
+
+        let dpr = window.devicePixelRatio || 1;
+        let viewportW = window.innerWidth;
+        let viewportH = window.innerHeight;
+        
+        function resizeCanvas() {
+            viewportW = window.innerWidth;
+            viewportH = window.innerHeight;
+            canvas.width = viewportW * dpr;
+            canvas.height = viewportH * dpr;
+            canvas.style.width = `${viewportW}px`;
+            canvas.style.height = `${viewportH}px`;
+        }
+
+        function applyTransform() {
+            const scaleX = (viewportW * dpr) / W;
+            const scaleY = (viewportH * dpr) / H;
+            ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        }
+
+        function animate() {
+            rotationAngle += ROTATION_SPEED;
+            if (rotationAngle > Math.PI * 2) rotationAngle -= Math.PI * 2;
+            computeHelixPoints();
+            for (let p of particles) p.update();
+            for (let orb of glowOrbs) orb.update();
+            applyTransform();
+            drawBackground();
+            drawRungs();
+            drawStrand(strand2Points, "#33aaff", false);
+            drawStrand(strand1Points, "#ff3355", true);
+            for (let orb of glowOrbs) orb.draw();
+            for (let p of particles) p.draw();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = "rgba(20, 40, 80, 0.05)";
+            ctx.fillRect(0, 0, W, H);
+            ctx.globalCompositeOperation = 'source-over';
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', () => {
+            dpr = window.devicePixelRatio || 1;
+            resizeCanvas();
+            applyTransform();
+        });
+        
+        initParticles();
+        initOrbs();
+        resizeCanvas();
+        applyTransform();
+        computeHelixPoints();
+        animate();
+    })();
+</script>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Starfield Warp Speed</title>
+<style>
+  * { margin: 0; padding: 0; }
+  body { background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; width: 100vw; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const W = 400;
+const H = 400;
+
+let vpw = Math.max(1, window.innerWidth);
+let vph = Math.max(1, window.innerHeight);
+let dpr = 1;
+
+function syncViewport() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  vpw = Math.max(1, window.innerWidth);
+  vph = Math.max(1, window.innerHeight);
+  canvas.width = Math.floor(vpw * dpr);
+  canvas.height = Math.floor(vph * dpr);
+}
+
+function beginFrame() {
+  syncViewport();
+  ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+}
+
+const CX = W / 2;
+const CY = H / 2;
+const NUM_STARS = 300;
+const MAX_DEPTH = 1500;
+const SPEED = 12;
+const TRAIL_LENGTH = 0.6;
+
+class Star {
+  constructor() {
+    this.reset();
+  }
+
+  reset() {
+    this.x = (Math.random() - 0.5) * W * 3;
+    this.y = (Math.random() - 0.5) * H * 3;
+    this.z = Math.random() * MAX_DEPTH;
+    this.pz = this.z;
+    this.hue = 200 + Math.random() * 60;
+    this.saturation = 20 + Math.random() * 40;
+  }
+
+  update() {
+    this.pz = this.z;
+    this.z -= SPEED;
+    if (this.z <= 0) {
+      this.reset();
+      this.z = MAX_DEPTH;
+      this.pz = this.z;
+    }
+  }
+
+  draw() {
+    const sx = (this.x / this.z) * (W / 2) + CX;
+    const sy = (this.y / this.z) * (H / 2) + CY;
+
+    const px = (this.x / this.pz) * (W / 2) + CX;
+    const py = (this.y / this.pz) * (H / 2) + CY;
+
+    const depthRatio = 1 - this.z / MAX_DEPTH;
+    const size = Math.max(0.3, depthRatio * 3.5);
+    const alpha = Math.min(1, depthRatio * 1.5);
+
+    const trailAlpha = alpha * TRAIL_LENGTH;
+    const grad = ctx.createLinearGradient(px, py, sx, sy);
+    grad.addColorStop(0, `hsla(${this.hue}, ${this.saturation}%, 80%, 0)`);
+    grad.addColorStop(1, `hsla(${this.hue}, ${this.saturation}%, 90%, ${trailAlpha})`);
+
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(sx, sy);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = size * 0.7;
+    ctx.stroke();
+
+    const glowSize = size * 3;
+    const glowGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowSize);
+    glowGrad.addColorStop(0, `hsla(${this.hue}, ${this.saturation}%, 95%, ${alpha * 0.6})`);
+    glowGrad.addColorStop(0.4, `hsla(${this.hue}, ${this.saturation}%, 70%, ${alpha * 0.2})`);
+    glowGrad.addColorStop(1, `hsla(${this.hue}, ${this.saturation}%, 50%, 0)`);
+    ctx.beginPath();
+    ctx.arc(sx, sy, glowSize, 0, Math.PI * 2);
+    ctx.fillStyle = glowGrad;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(sx, sy, size, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(0, 0%, 100%, ${alpha})`;
+    ctx.fill();
+  }
+}
+
+const stars = Array.from({ length: NUM_STARS }, () => new Star());
+
+stars.forEach((s, i) => {
+  s.z = (i / NUM_STARS) * MAX_DEPTH;
+  s.pz = s.z + SPEED;
+});
+
+function animate() {
+  beginFrame();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+  ctx.fillRect(0, 0, W, H);
+
+  const centerGlow = ctx.createRadialGradient(CX, CY, 0, CX, CY, 60);
+  centerGlow.addColorStop(0, 'rgba(100, 140, 255, 0.03)');
+  centerGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = centerGlow;
+  ctx.fillRect(0, 0, W, H);
+
+  stars.sort((a, b) => b.z - a.z);
+
+  for (const star of stars) {
+    star.update();
+    star.draw();
+  }
+
+  requestAnimationFrame(animate);
+}
+
+syncViewport();
+window.addEventListener('resize', syncViewport);
+animate();
+</script>
+</body>
+</html>

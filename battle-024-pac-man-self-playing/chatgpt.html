@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pac-Man AI Fixed</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: black;
+  }
+  canvas {
+    width: 100vw;
+    height: 100vh;
+    display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+const W = 540;
+const H = 960;
+
+let dpr = window.devicePixelRatio || 1;
+let vpw = 0, vph = 0;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  vpw = window.innerWidth;
+  vph = window.innerHeight;
+  canvas.width = vpw * dpr;
+  canvas.height = vph * dpr;
+}
+window.addEventListener("resize", resize);
+resize();
+
+const TILE = 30;
+const COLS = 18;
+const ROWS = 30;
+const OFFSET_Y = (H - ROWS * TILE) / 2;
+
+const maze = Array.from({length:ROWS},(_,y)=>
+  Array.from({length:COLS},(_,x)=>
+    (x===0||y===0||x===COLS-1||y===ROWS-1||(x%4===0&&y%4<3))?1:0
+  )
+);
+
+let dots = new Set();
+function resetDots(){
+  dots.clear();
+  for(let y=0;y<ROWS;y++){
+    for(let x=0;x<COLS;x++){
+      if(maze[y][x]===0) dots.add(x+","+y);
+    }
+  }
+}
+resetDots();
+
+let score = 0;
+let pac = {x:1,y:1};
+
+const ghosts = [
+  {x:16,y:1,color:"red"},
+  {x:16,y:28,color:"pink"},
+  {x:1,y:28,color:"cyan"},
+  {x:9,y:15,color:"orange"}
+];
+
+function getNeighbors(x,y){
+  return [[1,0],[-1,0],[0,1],[0,-1]]
+    .map(d=>[x+d[0],y+d[1]])
+    .filter(([nx,ny])=>maze[ny]?.[nx]===0);
+}
+
+function bfs(start,target){
+  const q=[start];
+  const visited=new Set([start.join(",")]);
+  const parent={};
+
+  while(q.length){
+    const [x,y]=q.shift();
+    if(x===target[0]&&y===target[1]) break;
+
+    for(const [nx,ny] of getNeighbors(x,y)){
+      const key=nx+","+ny;
+      if(!visited.has(key)){
+        visited.add(key);
+        parent[key]=[x,y];
+        q.push([nx,ny]);
+      }
+    }
+  }
+
+  let path=[];
+  let cur=target;
+  while(cur && (cur[0]!==start[0]||cur[1]!==start[1])){
+    path.unshift(cur);
+    cur=parent[cur.join(",")];
+  }
+  return path;
+}
+
+let stepTimer = 0;
+const STEP_DELAY = 10;
+
+function update(){
+  stepTimer++;
+  if(stepTimer < STEP_DELAY) return;
+  stepTimer = 0;
+
+  let best=null, bestDist=9999;
+
+  dots.forEach(d=>{
+    const [x,y]=d.split(",").map(Number);
+    const dist=Math.abs(x-pac.x)+Math.abs(y-pac.y);
+    if(dist<bestDist){
+      bestDist=dist;
+      best=[x,y];
+    }
+  });
+
+  if(best){
+    const path=bfs([pac.x,pac.y],best);
+    if(path.length){
+      const [nx,ny]=path[0];
+
+      const danger = ghosts.some(g=>Math.abs(g.x-nx)+Math.abs(g.y-ny)<2);
+      if(!danger){
+        pac.x=nx;
+        pac.y=ny;
+      }
+    }
+  }
+
+  ghosts.forEach(g=>{
+    const path=bfs([g.x,g.y],[pac.x,pac.y]);
+    if(path.length){
+      const [nx,ny]=path[0];
+      g.x=nx;
+      g.y=ny;
+    }
+  });
+
+  const key=pac.x+","+pac.y;
+  if(dots.has(key)){
+    dots.delete(key);
+    score++;
+  }
+
+  ghosts.forEach(g=>{
+    if(g.x===pac.x && g.y===pac.y){
+      reset();
+    }
+  });
+
+  if(dots.size===0) reset();
+}
+
+function reset(){
+  pac.x=1; pac.y=1;
+  score=0;
+  resetDots();
+}
+
+function drawMaze(){
+  ctx.fillStyle="#001133";
+  for(let y=0;y<ROWS;y++){
+    for(let x=0;x<COLS;x++){
+      if(maze[y][x]===1){
+        ctx.fillRect(x*TILE,OFFSET_Y+y*TILE,TILE,TILE);
+      }
+    }
+  }
+}
+
+function drawDots(){
+  ctx.fillStyle="#fff";
+  dots.forEach(d=>{
+    const [x,y]=d.split(",").map(Number);
+    ctx.beginPath();
+    ctx.arc(x*TILE+15,OFFSET_Y+y*TILE+15,3,0,Math.PI*2);
+    ctx.fill();
+  });
+}
+
+function drawPac(){
+  ctx.fillStyle="yellow";
+  ctx.beginPath();
+  ctx.arc(pac.x*TILE+15,OFFSET_Y+pac.y*TILE+15,12,0,Math.PI*2);
+  ctx.fill();
+}
+
+function drawGhosts(){
+  ghosts.forEach(g=>{
+    ctx.fillStyle=g.color;
+    ctx.beginPath();
+    ctx.arc(g.x*TILE+15,OFFSET_Y+g.y*TILE+15,12,0,Math.PI*2);
+    ctx.fill();
+  });
+}
+
+function drawScore(){
+  ctx.fillStyle="#00ff88";
+  ctx.font="24px monospace";
+  ctx.fillText("Score: "+score,20,40);
+}
+
+function draw(){
+  ctx.fillStyle="black";
+  ctx.fillRect(0,0,W,H);
+
+  drawMaze();
+  drawDots();
+  drawPac();
+  drawGhosts();
+  drawScore();
+}
+
+function animate(){
+  update();
+
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  ctx.setTransform((vpw/W)*dpr, 0, 0, (vph/H)*dpr, 0, 0);
+
+  draw();
+
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>

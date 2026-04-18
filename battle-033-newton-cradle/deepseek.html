@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Newton's Cradle | Metallic Balls | Energy Transfer | Auto Restart</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: #000000;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        .canvas-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+        }
+
+        canvas {
+            display: block;
+            box-shadow: 0 0 0 1px #3a5a6a;
+            background: #0a0e12;
+        }
+    </style>
+</head>
+<body>
+<div class="canvas-wrapper">
+    <canvas id="gameCanvas" width="540" height="960"></canvas>
+</div>
+
+<script>
+    (function() {
+        // ========== FIXED LOGICAL CANVAS (9:16 PORTRAIT) ==========
+        const LOGIC_W = 540;
+        const LOGIC_H = 960;
+        
+        const canvas = document.getElementById('gameCanvas');
+        let ctx = canvas.getContext('2d');
+        
+        // ========== NEWTON'S CRADLE CONFIGURATION ==========
+        const BALL_COUNT = 5;
+        const BALL_RADIUS = 24;
+        const SUSPENSION_POINT_Y = 160;
+        const PIVOT_START_X = 120;
+        const PIVOT_END_X = LOGIC_W - 120;
+        const SPACING = (PIVOT_END_X - PIVOT_START_X) / (BALL_COUNT - 1);
+        
+        // String length (distance from pivot to ball center)
+        const STRING_LEN = 260;
+        
+        // Physics constants
+        const GRAVITY = 0.22;
+        const DAMPING = 0.9992;      // very light damping for realistic decay
+        const RESTITUTION = 0.98;     // collision energy retention
+        
+        // Initial swing angle (radians) for the first ball
+        const INIT_ANGLE = 0.52;       // ~30 degrees
+        
+        // ========== BALLS DATA ==========
+        let balls = [];
+        let angles = [];       // current angle from vertical (radians)
+        let angularVel = [];   // angular velocity
+        let prevAngles = [];
+        
+        // Contact flash effects
+        let contactFlash = [];  // intensity per ball pair (simplified, store flash timer)
+        let flashTimers = [];
+        
+        // For energy display
+        let totalEnergy = 0;
+        
+        // Auto-restart mechanism: when amplitude becomes very small, reset simulation
+        let autoResetTimer = null;
+        let resetCooldown = 0;
+        let cradleActive = true;
+        
+        // ========== METALLIC GRADIENTS ==========
+        function getMetalGradient(x, y, radius, angleLight) {
+            const grad = ctx.createRadialGradient(x - radius*0.3, y - radius*0.3, radius*0.2, x, y, radius);
+            grad.addColorStop(0, '#f0f5ff');
+            grad.addColorStop(0.3, '#c0c8dc');
+            grad.addColorStop(0.6, '#8a94a8');
+            grad.addColorStop(1, '#4a5268');
+            return grad;
+        }
+        
+        // ========== INITIALIZE / RESET CRADLE ==========
+        function initCradle(resetWithEnergy = true) {
+            balls = [];
+            angles = [];
+            angularVel = [];
+            flashTimers = [];
+            
+            for (let i = 0; i < BALL_COUNT; i++) {
+                let pivotX = PIVOT_START_X + i * SPACING;
+                // All balls start at rest except the first one if resetWithEnergy
+                let initAngle = (i === 0 && resetWithEnergy) ? INIT_ANGLE : 0;
+                angles.push(initAngle);
+                angularVel.push(0);
+                flashTimers.push(0);
+                balls.push({
+                    pivotX: pivotX,
+                    pivotY: SUSPENSION_POINT_Y,
+                    radius: BALL_RADIUS,
+                    color: `hsl(${210 + i * 6}, 55%, 55%)`
+                });
+            }
+            // Slight offset for perfect symmetry
+            if (!resetWithEnergy) {
+                // complete stillness
+            }
+            totalEnergy = 0;
+            cradleActive = true;
+            resetCooldown = 0;
+        }
+        
+        // ========== UPDATE PHYSICS (PENDULUM + COLLISIONS) ==========
+        function updatePhysics() {
+            if (!cradleActive) return;
+            
+            // Compute current positions
+            let positions = [];
+            for (let i = 0; i < BALL_COUNT; i++) {
+                let angle = angles[i];
+                let x = balls[i].pivotX + Math.sin(angle) * STRING_LEN;
+                let y = balls[i].pivotY + Math.cos(angle) * STRING_LEN;
+                positions.push({ x, y, angle });
+            }
+            
+            // Apply pendulum gravity torque (alpha = -g/L * sin(theta))
+            for (let i = 0; i < BALL_COUNT; i++) {
+                let torque = -(GRAVITY / STRING_LEN) * Math.sin(angles[i]);
+                angularVel[i] += torque;
+                angularVel[i] *= DAMPING;
+                angles[i] += angularVel[i];
+            }
+            
+            // Collision detection & response (elastic collisions between adjacent balls)
+            // We'll use a more accurate impulse method when distance between centers < 2*radius
+            let collisionsOccurred = false;
+            for (let i = 0; i < BALL_COUNT - 1; i++) {
+                let pos1 = {
+                    x: balls[i].pivotX + Math.sin(angles[i]) * STRING_LEN,
+                    y: balls[i].pivotY + Math.cos(angles[i]) * STRING_LEN
+                };
+                let pos2 = {
+                    x: balls[i+1].pivotX + Math.sin(angles[i+1]) * STRING_LEN,
+                    y: balls[i+1].pivotY + Math.cos(angles[i+1]) * STRING_LEN
+                };
+                let dx = pos2.x - pos1.x;
+                let dy = pos2.y - pos1.y;
+                let dist = Math.hypot(dx, dy);
+                let minDist = BALL_RADIUS * 2;
+                
+                if (dist < minDist) {
+                    collisionsOccurred = true;
+                    // Activate contact flash for this pair
+                    flashTimers[i] = 8;
+                    flashTimers[i+1] = 8;
+                    
+                    // Resolve collision using impulse exchange (angular velocity transfer)
+                    // Compute linear velocities from angular velocities (v = omega * L * cos(angle offset? approximate))
+                    // Simpler: exchange angular velocities based on relative motion
+                    let v1_rel = angularVel[i] * STRING_LEN;
+                    let v2_rel = angularVel[i+1] * STRING_LEN;
+                    let relativeVel = v2_rel - v1_rel;
+                    
+                    if (relativeVel < 0) {
+                        // Exchange velocities (elastic collision)
+                        let newV1 = v2_rel * RESTITUTION;
+                        let newV2 = v1_rel * RESTITUTION;
+                        angularVel[i] = newV1 / STRING_LEN;
+                        angularVel[i+1] = newV2 / STRING_LEN;
+                        
+                        // Slight separation to avoid sticking
+                        let overlap = minDist - dist;
+                        let correction = overlap * 0.5;
+                        let angleCorr = Math.atan2(dy, dx);
+                        // Adjust angles slightly to separate
+                        angles[i] -= correction * 0.3 / STRING_LEN;
+                        angles[i+1] += correction * 0.3 / STRING_LEN;
+                    }
+                }
+            }
+            
+            // Update flash timers
+            for (let i = 0; i < BALL_COUNT; i++) {
+                if (flashTimers[i] > 0) flashTimers[i]--;
+            }
+            
+            // Compute total kinetic energy to monitor decay
+            let kineticEnergy = 0;
+            for (let i = 0; i < BALL_COUNT; i++) {
+                let speed = Math.abs(angularVel[i] * STRING_LEN);
+                kineticEnergy += 0.5 * speed * speed; // mass = 1
+            }
+            totalEnergy = kineticEnergy;
+            
+            // Auto-restart condition: if energy below threshold and not resetting, schedule reset
+            if (cradleActive && totalEnergy < 0.35 && Math.abs(angles[0]) < 0.03 && Math.abs(angles[BALL_COUNT-1]) < 0.03) {
+                cradleActive = false;
+                resetCooldown = 70;   // frames before restart
+            }
+        }
+        
+        // ========== HANDLE AUTO RESTART (continuous loop) ==========
+        function handleAutoRestart() {
+            if (!cradleActive && resetCooldown > 0) {
+                resetCooldown--;
+                if (resetCooldown === 0) {
+                    // Full reset: start new cradle with initial swing
+                    initCradle(true);
+                }
+            }
+        }
+        
+        // ========== DRAW STRINGS (suspension wires) ==========
+        function drawStrings() {
+            ctx.beginPath();
+            ctx.strokeStyle = "#b8c8e0";
+            ctx.lineWidth = 1.8;
+            ctx.shadowBlur = 0;
+            for (let i = 0; i < BALL_COUNT; i++) {
+                let angle = angles[i];
+                let ballX = balls[i].pivotX + Math.sin(angle) * STRING_LEN;
+                let ballY = balls[i].pivotY + Math.cos(angle) * STRING_LEN;
+                ctx.beginPath();
+                ctx.moveTo(balls[i].pivotX, balls[i].pivotY);
+                ctx.lineTo(ballX, ballY);
+                ctx.stroke();
+            }
+            // top bar (metallic)
+            ctx.fillStyle = "#8a9ab0";
+            ctx.fillRect(PIVOT_START_X - 12, SUSPENSION_POINT_Y - 6, (PIVOT_END_X - PIVOT_START_X) + 24, 10);
+            ctx.fillStyle = "#c0cee4";
+            ctx.fillRect(PIVOT_START_X - 8, SUSPENSION_POINT_Y - 4, (PIVOT_END_X - PIVOT_START_X) + 16, 6);
+            // Support stands
+            ctx.fillStyle = "#6a7a8a";
+            ctx.fillRect(PIVOT_START_X - 18, SUSPENSION_POINT_Y - 4, 10, 38);
+            ctx.fillRect(PIVOT_END_X + 8, SUSPENSION_POINT_Y - 4, 10, 38);
+            ctx.fillStyle = "#4a5a68";
+            ctx.fillRect(PIVOT_START_X - 20, SUSPENSION_POINT_Y + 28, 14, 12);
+            ctx.fillRect(PIVOT_END_X + 6, SUSPENSION_POINT_Y + 28, 14, 12);
+        }
+        
+        // ========== DRAW METALLIC BALLS WITH HIGHLIGHTS ==========
+        function drawBalls() {
+            for (let i = 0; i < BALL_COUNT; i++) {
+                let angle = angles[i];
+                let x = balls[i].pivotX + Math.sin(angle) * STRING_LEN;
+                let y = balls[i].pivotY + Math.cos(angle) * STRING_LEN;
+                
+                // Metallic gradient
+                const grad = ctx.createRadialGradient(x - 8, y - 8, 5, x, y, BALL_RADIUS);
+                grad.addColorStop(0, '#f8fcff');
+                grad.addColorStop(0.25, '#cfd9e8');
+                grad.addColorStop(0.6, '#8e9ab0');
+                grad.addColorStop(1, '#4a5268');
+                ctx.fillStyle = grad;
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = "rgba(0,0,0,0.4)";
+                ctx.beginPath();
+                ctx.arc(x, y, BALL_RADIUS, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Specular highlight
+                ctx.fillStyle = "#ffffffcc";
+                ctx.beginPath();
+                ctx.arc(x - 6, y - 7, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = "#ffffff88";
+                ctx.beginPath();
+                ctx.arc(x - 8, y - 9, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Contact flash (white glow on collision)
+                if (flashTimers[i] > 0) {
+                    let intensity = flashTimers[i] / 8;
+                    ctx.beginPath();
+                    ctx.arc(x, y, BALL_RADIUS + 4 * intensity, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 240, 180, ${intensity * 0.7})`;
+                    ctx.fill();
+                    // inner spark
+                    ctx.beginPath();
+                    ctx.arc(x - 2, y - 3, 6 * intensity, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 200, 100, ${intensity * 0.9})`;
+                    ctx.fill();
+                }
+                ctx.shadowBlur = 0;
+            }
+        }
+        
+        // ========== DRAW SHADOW UNDER BALLS (on floor) ==========
+        function drawShadows() {
+            for (let i = 0; i < BALL_COUNT; i++) {
+                let angle = angles[i];
+                let x = balls[i].pivotX + Math.sin(angle) * STRING_LEN;
+                let y = balls[i].pivotY + Math.cos(angle) * STRING_LEN;
+                let shadowY = LOGIC_H - 60;
+                let shadowSize = BALL_RADIUS * (1 - (y - SUSPENSION_POINT_Y) / STRING_LEN * 0.4);
+                ctx.fillStyle = `rgba(0, 0, 0, 0.2)`;
+                ctx.beginPath();
+                ctx.ellipse(x, shadowY, shadowSize * 0.9, shadowSize * 0.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
+        // ========== DRAW BACKGROUND WITH WOODEN BASE ==========
+        function drawBackground() {
+            // dark elegant background
+            const grad = ctx.createLinearGradient(0, 0, 0, LOGIC_H);
+            grad.addColorStop(0, "#0a1018");
+            grad.addColorStop(0.7, "#121a24");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, LOGIC_W, LOGIC_H);
+            
+            // wooden base
+            ctx.fillStyle = "#4a3528";
+            ctx.fillRect(0, LOGIC_H - 70, LOGIC_W, 70);
+            ctx.fillStyle = "#6b4c38";
+            ctx.fillRect(0, LOGIC_H - 72, LOGIC_W, 8);
+            for (let i = 0; i < 18; i++) {
+                ctx.fillStyle = "#8b6c4e";
+                ctx.fillRect(20 + i * 30, LOGIC_H - 58, 12, 5);
+            }
+            // shadow gradient on base
+            ctx.fillStyle = "#00000030";
+            ctx.fillRect(0, LOGIC_H - 72, LOGIC_W, 12);
+        }
+        
+        // ========== DRAW ENERGY INDICATOR (subtle UI) ==========
+        function drawEnergyMeter() {
+            let energyPercent = Math.min(1, totalEnergy / 12);
+            ctx.fillStyle = "#2a3a44";
+            ctx.fillRect(LOGIC_W - 110, 38, 80, 8);
+            ctx.fillStyle = `hsl(${40 + (1 - energyPercent) * 40}, 70%, 55%)`;
+            ctx.fillRect(LOGIC_W - 110, 38, 80 * energyPercent, 8);
+            ctx.font = "10px monospace";
+            ctx.fillStyle = "#bbccdd";
+            ctx.fillText("ENERGY", LOGIC_W - 105, 34);
+            
+            // Title
+            ctx.font = "bold 18px 'Segoe UI', 'Courier New'";
+            ctx.fillStyle = "#ccddee";
+            ctx.shadowBlur = 3;
+            ctx.fillText("NEWTON'S CRADLE", 22, 52);
+            ctx.font = "11px monospace";
+            ctx.fillStyle = "#aabbcc";
+            ctx.fillText("metallic | momentum transfer", 22, 78);
+            ctx.shadowBlur = 0;
+            
+            if (resetCooldown > 0 && !cradleActive) {
+                ctx.font = "italic 14px monospace";
+                ctx.fillStyle = "#ffcc88";
+                ctx.fillText("⚡ restarting swing...", LOGIC_W - 160, 85);
+            }
+        }
+        
+        // ========== ADDITIONAL SPARKS ON COLLISION ==========
+        let extraSparks = [];
+        class Spark {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 2.5;
+                this.vy = (Math.random() - 0.5) * 2 - 1;
+                this.life = 0.4;
+                this.size = 1.5 + Math.random() * 3;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.08;
+                this.life -= 0.025;
+                return this.life > 0;
+            }
+            draw() {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = "#ffcc66";
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.globalAlpha = 1;
+            }
+        }
+        
+        // Generate sparks on collision from flash timers
+        function addCollisionSparks() {
+            for (let i = 0; i < BALL_COUNT - 1; i++) {
+                if (flashTimers[i] === 7 || flashTimers[i] === 6) { // when flash starts
+                    let angle = angles[i];
+                    let x1 = balls[i].pivotX + Math.sin(angles[i]) * STRING_LEN;
+                    let y1 = balls[i].pivotY + Math.cos(angles[i]) * STRING_LEN;
+                    let x2 = balls[i+1].pivotX + Math.sin(angles[i+1]) * STRING_LEN;
+                    let y2 = balls[i+1].pivotY + Math.cos(angles[i+1]) * STRING_LEN;
+                    let mx = (x1 + x2) / 2;
+                    let my = (y1 + y2) / 2;
+                    for (let s = 0; s < 5; s++) {
+                        extraSparks.push(new Spark(mx + (Math.random() - 0.5) * 10, my + (Math.random() - 0.5) * 10));
+                    }
+                }
+            }
+        }
+        
+        function updateSparks() {
+            extraSparks = extraSparks.filter(s => s.update());
+        }
+        
+        function drawSparks() {
+            for (let s of extraSparks) s.draw();
+        }
+        
+        // ========== ADD TRAIL EFFECT (subtle) ==========
+        let trailPoints = [];
+        function updateTrails() {
+            if (Math.abs(angularVel[0]) > 0.05 || Math.abs(angularVel[BALL_COUNT-1]) > 0.05) {
+                let endIdx = (Math.abs(angularVel[0]) > Math.abs(angularVel[BALL_COUNT-1])) ? 0 : BALL_COUNT-1;
+                let angle = angles[endIdx];
+                let x = balls[endIdx].pivotX + Math.sin(angle) * STRING_LEN;
+                let y = balls[endIdx].pivotY + Math.cos(angle) * STRING_LEN;
+                trailPoints.push({ x, y, life: 0.5 });
+            }
+            for (let i=0; i<trailPoints.length; i++) {
+                trailPoints[i].life -= 0.02;
+                if (trailPoints[i].life <= 0) {
+                    trailPoints.splice(i,1);
+                    i--;
+                }
+            }
+        }
+        
+        function drawTrails() {
+            for (let t of trailPoints) {
+                ctx.globalAlpha = t.life * 0.4;
+                ctx.fillStyle = "#ddeeff";
+                ctx.beginPath();
+                ctx.arc(t.x, t.y, 3, 0, Math.PI*2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+        }
+        
+        // ========== RESIZE HANDLER & DEVICE PIXEL RATIO ==========
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            const targetRatio = LOGIC_W / LOGIC_H;
+            let drawWidth = containerWidth;
+            let drawHeight = containerWidth / targetRatio;
+            if (drawHeight > containerHeight) {
+                drawHeight = containerHeight;
+                drawWidth = containerHeight * targetRatio;
+            }
+            canvas.style.width = `${drawWidth}px`;
+            canvas.style.height = `${drawHeight}px`;
+            canvas.width = LOGIC_W;
+            canvas.height = LOGIC_H;
+            ctx = canvas.getContext('2d');
+        }
+        
+        // ========== ANIMATION LOOP ==========
+        let lastTimestamp = 0;
+        
+        function animate() {
+            updatePhysics();
+            handleAutoRestart();
+            updateSparks();
+            addCollisionSparks();
+            updateTrails();
+            
+            drawBackground();
+            drawStrings();
+            drawBalls();
+            drawShadows();
+            drawTrails();
+            drawSparks();
+            drawEnergyMeter();
+            
+            requestAnimationFrame(animate);
+        }
+        
+        // ========== INITIAL SETUP ==========
+        function setup() {
+            initCradle(true);
+            resizeCanvas();
+            window.addEventListener('resize', () => resizeCanvas());
+            window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 20));
+            animate();
+        }
+        
+        setup();
+    })();
+</script>
+</body>
+</html>

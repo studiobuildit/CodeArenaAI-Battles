@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Newton's Cradle Simulation</title>
+    <style>
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="cradleCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('cradleCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+
+        // Simulation Parameters
+        const ballCount = 5;
+        const ballRadius = 35;
+        const stringLength = 400;
+        const centerX = W / 2;
+        const centerY = 250;
+        const gravity = 0.35;
+        const friction = 0.9995; // Air resistance
+
+        let balls = [];
+        let resetTimer = 0;
+
+        class Ball {
+            constructor(index) {
+                this.index = index;
+                this.mass = 1;
+                this.r = ballRadius;
+                this.pivotX = centerX + (index - (ballCount - 1) / 2) * (ballRadius * 2);
+                this.pivotY = centerY;
+                this.angle = 0;
+                this.angleVel = 0;
+                this.flashAlpha = 0;
+            }
+
+            update() {
+                // Pendulum physics: Force = -g/L * sin(theta)
+                let accel = (-gravity / stringLength) * Math.sin(this.angle);
+                this.angleVel += accel;
+                this.angleVel *= friction;
+                this.angle += this.angleVel;
+
+                if (this.flashAlpha > 0) this.flashAlpha -= 0.1;
+
+                // Position for drawing
+                this.x = this.pivotX + Math.sin(this.angle) * stringLength;
+                this.y = this.pivotY + Math.cos(this.angle) * stringLength;
+            }
+
+            draw() {
+                // String
+                ctx.strokeStyle = '#555';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(this.pivotX, this.pivotY);
+                ctx.lineTo(this.x, this.y);
+                ctx.stroke();
+
+                // Ball
+                const grad = ctx.createRadialGradient(this.x - 10, this.y - 10, 5, this.x, this.y, this.r);
+                grad.addColorStop(0, '#eee');
+                grad.addColorStop(0.4, '#888');
+                grad.addColorStop(1, '#222');
+                
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Contact Flash
+                if (this.flashAlpha > 0) {
+                    ctx.fillStyle = `rgba(255, 255, 255, ${this.flashAlpha})`;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.r + 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        function init() {
+            balls = [];
+            for (let i = 0; i < ballCount; i++) {
+                balls.push(new Ball(i));
+            }
+            // Lift the first ball to start the chain
+            balls[0].angle = -Math.PI / 3;
+            resetTimer = 0;
+        }
+
+        function handleCollisions() {
+            for (let i = 0; i < balls.length - 1; i++) {
+                let b1 = balls[i];
+                let b2 = balls[i + 1];
+
+                // Check distance in arc space (simplified for 1D pendulum chain)
+                const dist = Math.sqrt(Math.pow(b1.x - b2.x, 2) + Math.pow(b1.y - b2.y, 2));
+
+                if (dist < ballRadius * 2) {
+                    // Elastic collision (Energy transfer)
+                    // Swap angular velocities
+                    let temp = b1.angleVel;
+                    b1.angleVel = b2.angleVel;
+                    b2.angleVel = temp;
+
+                    // Contact flash
+                    b1.flashAlpha = 0.5;
+                    b2.flashAlpha = 0.5;
+
+                    // Prevent overlap sticking
+                    let overlap = (ballRadius * 2 - dist) / 2;
+                    b1.angle -= overlap / stringLength;
+                    b2.angle += overlap / stringLength;
+                }
+            }
+        }
+
+        function resize() {
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const scale = Math.min(vw / W, vh / H);
+            const cssW = Math.round(W * scale);
+            const cssH = Math.round(H * scale);
+            const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+
+            canvas.style.setProperty('width', cssW + 'px', 'important');
+            canvas.style.setProperty('height', cssH + 'px', 'important');
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+            ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+            ctx.imageSmoothingEnabled = true;
+        }
+
+        function drawFrame() {
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 15;
+            ctx.lineCap = 'round';
+            // Main beam
+            ctx.beginPath();
+            ctx.moveTo(centerX - 200, centerY);
+            ctx.lineTo(centerX + 200, centerY);
+            ctx.stroke();
+            
+            // Supports
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(centerX - 200, centerY); ctx.lineTo(centerX - 230, H - 200);
+            ctx.moveTo(centerX + 200, centerY); ctx.lineTo(centerX + 230, H - 200);
+            ctx.stroke();
+        }
+
+        function loop() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, W, H);
+
+            drawFrame();
+
+            balls.forEach(b => b.update());
+            handleCollisions();
+            balls.forEach(b => b.draw());
+
+            // Check if energy has dissipated significantly
+            let totalEnergy = balls.reduce((sum, b) => sum + Math.abs(b.angleVel), 0);
+            if (totalEnergy < 0.005) {
+                resetTimer++;
+                if (resetTimer > 120) init();
+            }
+
+            // UI
+            ctx.fillStyle = '#444';
+            ctx.font = '16px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText("MOMENTUM TRANSFER", W/2, H - 100);
+
+            requestAnimationFrame(loop);
+        }
+
+        window.addEventListener('resize', resize, { passive: true });
+        window.addEventListener('load', () => requestAnimationFrame(resize), { once: true });
+        resize();
+        init();
+        loop();
+    </script>
+</body>
+</html>

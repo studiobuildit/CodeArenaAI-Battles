@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Wrecking Ball Demolition</title>
+<style>
+html,body{
+  margin:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  background:#000;
+}
+body{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+canvas{
+  display:block;
+  background:#000;
+  touch-action:none;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<script>
+(() => {
+  const W = 540, H = 960;
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+
+  let scale = 1, dpr = 1;
+
+  function resize(){
+    const vw = innerWidth, vh = innerHeight;
+    scale = Math.min(vw / W, vh / H);
+    const cw = Math.round(W * scale);
+    const ch = Math.round(H * scale);
+
+    canvas.style.width = cw + "px";
+    canvas.style.height = ch + "px";
+
+    dpr = Math.max(1, Math.min(3, devicePixelRatio || 1));
+    canvas.width = Math.round(cw * dpr);
+    canvas.height = Math.round(ch * dpr);
+
+    ctx.setTransform(dpr * scale,0,0,dpr * scale,0,0);
+    ctx.imageSmoothingEnabled = true;
+  }
+  addEventListener("resize", resize, {passive:true});
+  resize();
+
+  const GROUND = 860;
+  let time = 0;
+  let debris = [];
+  let dust = [];
+  let building = [];
+  let hitCooldown = 0;
+
+  function rand(a,b){ return a + Math.random()*(b-a); }
+
+  function makeBuilding(){
+    building.length = 0;
+    debris.length = 0;
+    dust.length = 0;
+
+    const bw = 250;
+    const bh = 620;
+    const bx = 250;
+    const by = GROUND - bh;
+
+    const cols = 10;
+    const rows = 31;
+    const brickW = bw / cols;
+    const brickH = bh / rows;
+
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        building.push({
+          x: bx + c*brickW + (r%2?2:0),
+          y: by + r*brickH,
+          w: brickW - 4,
+          h: brickH - 2,
+          vx:0, vy:0,
+          alive:true,
+          falling:false
+        });
+      }
+    }
+  }
+
+  makeBuilding();
+
+  function spawnDust(x,y,n){
+    for(let i=0;i<n;i++){
+      dust.push({
+        x,y,
+        vx:rand(-2.2,2.2),
+        vy:rand(-2.5,-0.2),
+        life:rand(25,55),
+        size:rand(6,16)
+      });
+    }
+  }
+
+  function shatter(brick, powerX, powerY){
+    brick.alive = false;
+    for(let i=0;i<2;i++){
+      debris.push({
+        x:brick.x + brick.w*0.5,
+        y:brick.y + brick.h*0.5,
+        w:brick.w*rand(0.45,0.7),
+        h:brick.h*rand(0.45,0.7),
+        vx:powerX + rand(-2,2),
+        vy:powerY + rand(-3,1),
+        rot:rand(0,6.28),
+        vr:rand(-0.18,0.18)
+      });
+    }
+    spawnDust(brick.x+brick.w*0.5, brick.y+brick.h*0.5, 6);
+  }
+
+  function craneBall(){
+    const pivotX = 120;
+    const pivotY = 120;
+    const len = 430;
+
+    const angle = Math.sin(time * 0.018) * 1.08 + 0.15;
+    const x = pivotX + Math.sin(angle) * len;
+    const y = pivotY + Math.cos(angle) * len;
+
+    const prevAngle = Math.sin((time-1) * 0.018) * 1.08 + 0.15;
+    const px = pivotX + Math.sin(prevAngle) * len;
+    const py = pivotY + Math.cos(prevAngle) * len;
+
+    return {
+      pivotX,pivotY,len,angle,x,y,
+      vx:x-px, vy:y-py,
+      r:38
+    };
+  }
+
+  function updatePhysics(){
+    const ball = craneBall();
+
+    // Building collision
+    if(hitCooldown>0) hitCooldown--;
+
+    for(let i=0;i<building.length;i++){
+      const b = building[i];
+      if(!b.alive) continue;
+
+      const nx = Math.max(b.x, Math.min(ball.x, b.x+b.w));
+      const ny = Math.max(b.y, Math.min(ball.y, b.y+b.h));
+      const dx = ball.x - nx;
+      const dy = ball.y - ny;
+
+      if(dx*dx + dy*dy < ball.r*ball.r){
+        if(hitCooldown===0){
+          const impact = Math.hypot(ball.vx, ball.vy);
+          if(impact > 3){
+            hitCooldown = 2;
+
+            const hitX = b.x + b.w*0.5;
+            const hitY = b.y + b.h*0.5;
+
+            for(let j=0;j<building.length;j++){
+              const t = building[j];
+              if(!t.alive) continue;
+
+              const cx = t.x + t.w*0.5;
+              const cy = t.y + t.h*0.5;
+              const dd = Math.hypot(cx-hitX, cy-hitY);
+
+              if(dd < 85 + impact*8){
+                if(Math.random() < (1 - dd/(110+impact*8))){
+                  shatter(t, ball.vx*0.55 + rand(0,2), ball.vy*0.25 - rand(0,2));
+                }
+              }else if(dd < 160 && Math.random() < 0.03){
+                t.falling = true;
+                t.vx += ball.vx*0.03;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Loose bricks topple if unsupported
+    for(const b of building){
+      if(!b.alive) continue;
+      if(b.falling){
+        b.vy += 0.18;
+        b.x += b.vx;
+        b.y += b.vy;
+        b.vx *= 0.99;
+      }else{
+        let support = false;
+        for(const o of building){
+          if(o===b || !o.alive) continue;
+          if(Math.abs((o.y) - (b.y+b.h)) < 4 &&
+             o.x < b.x+b.w-4 &&
+             o.x+o.w > b.x+4){
+            support = true; break;
+          }
+        }
+        if(!support && b.y+b.h < GROUND-1){
+          b.falling = true;
+        }
+      }
+
+      if(b.y + b.h >= GROUND){
+        b.y = GROUND - b.h;
+        b.vy *= -0.15;
+        b.vx *= 0.82;
+        if(Math.abs(b.vy) < 0.6) b.vy = 0;
+      }
+    }
+
+    // Debris
+    for(let i=debris.length-1;i>=0;i--){
+      const d = debris[i];
+      d.vy += 0.22;
+      d.x += d.vx;
+      d.y += d.vy;
+      d.rot += d.vr;
+      d.vx *= 0.995;
+
+      if(d.y + d.h/2 > GROUND){
+        d.y = GROUND - d.h/2;
+        d.vy *= -0.18;
+        d.vx *= 0.86;
+        d.vr *= 0.9;
+      }
+
+      if(d.x < -80 || d.x > W+80) debris.splice(i,1);
+    }
+
+    // Dust
+    for(let i=dust.length-1;i>=0;i--){
+      const p = dust[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.98;
+      p.vy -= 0.01;
+      p.life--;
+      if(p.life<=0) dust.splice(i,1);
+    }
+
+    // Reset when mostly destroyed
+    let aliveCount = 0;
+    for(const b of building) if(b.alive) aliveCount++;
+    if(aliveCount < 28){
+      if(time % 120 === 0) makeBuilding();
+    }
+  }
+
+  function drawSky(){
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,"#050505");
+    g.addColorStop(0.55,"#111");
+    g.addColorStop(1,"#000");
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  function drawGround(){
+    ctx.fillStyle = "#111";
+    ctx.fillRect(0,GROUND,W,H-GROUND);
+
+    ctx.fillStyle = "#222";
+    for(let x=0;x<W;x+=28){
+      ctx.fillRect(x,GROUND+22,18,4);
+    }
+  }
+
+  function drawCrane(ball){
+    // tower
+    ctx.strokeStyle = "#555";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(90,GROUND);
+    ctx.lineTo(90,100);
+    ctx.stroke();
+
+    // boom
+    ctx.strokeStyle = "#777";
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(90,120);
+    ctx.lineTo(220,120);
+    ctx.stroke();
+
+    // cable
+    ctx.strokeStyle = "#bbb";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(ball.pivotX, ball.pivotY);
+    ctx.lineTo(ball.x, ball.y);
+    ctx.stroke();
+
+    // ball
+    const rg = ctx.createRadialGradient(ball.x-10,ball.y-12,6,ball.x,ball.y,ball.r);
+    rg.addColorStop(0,"#999");
+    rg.addColorStop(1,"#444");
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  function drawBuilding(){
+    for(const b of building){
+      if(!b.alive) continue;
+      ctx.fillStyle = "#9a4f33";
+      ctx.fillRect(b.x,b.y,b.w,b.h);
+
+      ctx.strokeStyle = "#5d2e1d";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(b.x,b.y,b.w,b.h);
+    }
+  }
+
+  function drawDebris(){
+    for(const d of debris){
+      ctx.save();
+      ctx.translate(d.x,d.y);
+      ctx.rotate(d.rot);
+      ctx.fillStyle = "#8a462d";
+      ctx.fillRect(-d.w/2,-d.h/2,d.w,d.h);
+      ctx.restore();
+    }
+  }
+
+  function drawDust(){
+    for(const p of dust){
+      const a = p.life / 55;
+      ctx.fillStyle = "rgba(180,170,150," + (a*0.28) + ")";
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.size,0,Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  function draw(){
+    drawSky();
+    drawGround();
+
+    const ball = craneBall();
+
+    drawBuilding();
+    drawDebris();
+    drawDust();
+    drawCrane(ball);
+
+    // subtle sparks on hard impacts
+    if(Math.abs(ball.vx) > 7 && ball.x > 220){
+      ctx.fillStyle = "rgba(255,180,40,0.5)";
+      for(let i=0;i<3;i++){
+        ctx.fillRect(ball.x+rand(-8,8), ball.y+rand(-8,8),2,2);
+      }
+    }
+  }
+
+  function loop(){
+    time++;
+    updatePhysics();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  loop();
+})();
+</script>
+</body>
+</html>

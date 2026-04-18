@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Winter Snowfall | Moonlit Forest</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: black;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: black;
+        }
+    </style>
+</head>
+<body>
+<canvas id="snowCanvas"></canvas>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('snowCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const W = 540;
+        const H = 960;
+        
+        class Snowflake {
+            constructor() {
+                this.reset();
+            }
+            
+            reset() {
+                this.x = Math.random() * W;
+                this.y = Math.random() * H - H;
+                this.radius = 1.5 + Math.random() * 4;
+                this.speedY = 1.2 + Math.random() * 2.2;
+                this.windDrift = (Math.random() - 0.5) * 0.35;
+                this.driftPhase = Math.random() * Math.PI * 2;
+                this.opacity = 0.5 + Math.random() * 0.5;
+            }
+            
+            update(wind) {
+                this.y += this.speedY;
+                this.x += wind + this.windDrift * Math.sin(Date.now() * 0.002 + this.driftPhase);
+                
+                if (this.y > H + 20) {
+                    this.reset();
+                    this.y = -20;
+                }
+                if (this.x < -30) this.x = W + 30;
+                if (this.x > W + 30) this.x = -30;
+            }
+            
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 245, ${this.opacity * 0.85})`;
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(this.x - 1, this.y - 1, this.radius * 0.3, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 250, 230, 0.9)`;
+                ctx.fill();
+            }
+        }
+        
+        class PineTree {
+            constructor(x, scale, yOffset) {
+                this.x = x;
+                this.scale = scale;
+                this.yOffset = yOffset;
+            }
+            
+            draw() {
+                const baseY = H - 65 + this.yOffset;
+                const treeHeight = 95 * this.scale;
+                const treeWidth = 32 * this.scale;
+                
+                ctx.fillStyle = "#0a1420";
+                ctx.shadowBlur = 0;
+                
+                ctx.beginPath();
+                ctx.moveTo(this.x, baseY);
+                ctx.lineTo(this.x - treeWidth, baseY - treeHeight * 0.55);
+                ctx.lineTo(this.x + treeWidth, baseY - treeHeight * 0.55);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.moveTo(this.x, baseY - treeHeight * 0.3);
+                ctx.lineTo(this.x - treeWidth * 0.85, baseY - treeHeight * 0.7);
+                ctx.lineTo(this.x + treeWidth * 0.85, baseY - treeHeight * 0.7);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.moveTo(this.x, baseY - treeHeight * 0.6);
+                ctx.lineTo(this.x - treeWidth * 0.65, baseY - treeHeight * 0.85);
+                ctx.lineTo(this.x + treeWidth * 0.65, baseY - treeHeight * 0.85);
+                ctx.fill();
+                
+                ctx.fillStyle = "#1a1a2a";
+                ctx.fillRect(this.x - 4 * this.scale, baseY - 8, 8 * this.scale, 12);
+                
+                ctx.fillStyle = "rgba(200, 210, 225, 0.35)";
+                ctx.beginPath();
+                ctx.ellipse(this.x, baseY - treeHeight * 0.55, treeWidth * 0.5, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(this.x, baseY - treeHeight * 0.7, treeWidth * 0.45, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
+        let snowAccumulation = [];
+        const GROUND_SEGMENTS = 80;
+        
+        function initGroundSnow() {
+            snowAccumulation = [];
+            for (let i = 0; i <= GROUND_SEGMENTS; i++) {
+                let x = (i / GROUND_SEGMENTS) * W;
+                let height = 18 + Math.sin(i * 0.25) * 6 + Math.cos(i * 0.7) * 3;
+                snowAccumulation.push({ x, height });
+            }
+        }
+        
+        function drawGround() {
+            ctx.fillStyle = "#e8f0ff";
+            ctx.fillRect(0, H - 55, W, 65);
+            ctx.fillStyle = "#c8d8f0";
+            ctx.fillRect(0, H - 52, W, 12);
+            
+            ctx.beginPath();
+            ctx.moveTo(0, H - 55);
+            for (let i = 0; i <= GROUND_SEGMENTS; i++) {
+                let pt = snowAccumulation[i];
+                ctx.lineTo(pt.x, H - 55 + pt.height * 0.5);
+            }
+            ctx.lineTo(W, H - 55);
+            ctx.lineTo(W, H);
+            ctx.lineTo(0, H);
+            ctx.fillStyle = "#f0f8ff";
+            ctx.fill();
+            
+            for (let i = 0; i < 180; i++) {
+                let x = Math.random() * W;
+                let y = H - 45 + Math.random() * 35;
+                ctx.beginPath();
+                ctx.arc(x, y, Math.random() * 1.5 + 0.5, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 245, ${Math.random() * 0.5})`;
+                ctx.fill();
+            }
+        }
+        
+        function drawSkyAndMoon() {
+            const grad = ctx.createLinearGradient(0, 0, 0, H * 0.7);
+            grad.addColorStop(0, "#0a1226");
+            grad.addColorStop(0.5, "#141c30");
+            grad.addColorStop(1, "#1a2440");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+            
+            const moonX = W - 65;
+            const moonY = 80;
+            const moonGlow = ctx.createRadialGradient(moonX, moonY, 10, moonX, moonY, 65);
+            moonGlow.addColorStop(0, "rgba(200, 220, 255, 0.35)");
+            moonGlow.addColorStop(1, "rgba(80, 100, 150, 0)");
+            ctx.fillStyle = moonGlow;
+            ctx.fillRect(0, 0, W, H);
+            
+            ctx.beginPath();
+            ctx.arc(moonX, moonY, 28, 0, Math.PI * 2);
+            ctx.fillStyle = "#f5f9ff";
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(moonX - 4, moonY - 3, 6, 0, Math.PI * 2);
+            ctx.fillStyle = "#e0e8f8";
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(moonX + 5, moonY + 4, 4, 0, Math.PI * 2);
+            ctx.fillStyle = "#d8e2f5";
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(moonX, moonY, 36, 0, Math.PI * 2);
+            ctx.strokeStyle = "rgba(200, 220, 255, 0.2)";
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+        
+        function drawMountains() {
+            ctx.fillStyle = "#0c1422";
+            ctx.beginPath();
+            ctx.moveTo(0, H - 140);
+            for (let x = 0; x <= W; x += 35) {
+                let y = H - 140 - Math.sin(x * 0.02) * 25 - Math.sin(x * 0.05) * 12;
+                ctx.lineTo(x, y);
+            }
+            ctx.lineTo(W, H);
+            ctx.lineTo(0, H);
+            ctx.fill();
+            
+            ctx.fillStyle = "#101a2a";
+            ctx.beginPath();
+            ctx.moveTo(0, H - 115);
+            for (let x = 0; x <= W; x += 40) {
+                let y = H - 115 - Math.cos(x * 0.025) * 20 - Math.sin(x * 0.07) * 8;
+                ctx.lineTo(x, y);
+            }
+            ctx.lineTo(W, H);
+            ctx.lineTo(0, H);
+            ctx.fill();
+        }
+        
+        let snowflakes = [];
+        const SNOW_COUNT = 550;
+        
+        function initSnow() {
+            snowflakes = [];
+            for (let i = 0; i < SNOW_COUNT; i++) snowflakes.push(new Snowflake());
+        }
+        
+        let wind = 0;
+        let windTime = 0;
+        
+        let stars = [];
+        const STAR_COUNT = 180;
+        function initStars() {
+            for (let i = 0; i < STAR_COUNT; i++) {
+                stars.push({
+                    x: Math.random() * W,
+                    y: Math.random() * (H * 0.5),
+                    size: 0.8 + Math.random() * 1.5,
+                    alpha: 0.3 + Math.random() * 0.6,
+                    twinkle: Math.random() * Math.PI * 2
+                });
+            }
+        }
+        
+        function drawStars() {
+            for (let s of stars) {
+                const twinkleAlpha = s.alpha * (0.7 + 0.3 * Math.sin(Date.now() * 0.002 + s.twinkle));
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 240, 200, ${twinkleAlpha * 0.6})`;
+                ctx.fill();
+            }
+        }
+        
+        let pineTrees = [];
+        function initTrees() {
+            pineTrees = [];
+            const treePositions = [35, 95, 160, 220, 280, 350, 420, 480];
+            for (let x of treePositions) {
+                let scale = 0.6 + Math.random() * 0.5;
+                let yOffset = Math.random() * 8 - 4;
+                pineTrees.push(new PineTree(x, scale, yOffset));
+            }
+            for (let i = 0; i < 12; i++) {
+                let x = Math.random() * W;
+                let scale = 0.4 + Math.random() * 0.3;
+                let yOffset = -15 + Math.random() * 10;
+                pineTrees.push(new PineTree(x, scale, yOffset));
+            }
+        }
+        
+        let dpr = window.devicePixelRatio || 1;
+        let viewportW = window.innerWidth;
+        let viewportH = window.innerHeight;
+        
+        function resizeCanvas() {
+            viewportW = window.innerWidth;
+            viewportH = window.innerHeight;
+            canvas.width = viewportW * dpr;
+            canvas.height = viewportH * dpr;
+            canvas.style.width = `${viewportW}px`;
+            canvas.style.height = `${viewportH}px`;
+        }
+        
+        function applyTransform() {
+            const scaleX = (viewportW * dpr) / W;
+            const scaleY = (viewportH * dpr) / H;
+            ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        }
+        
+        let lastTimestamp = 0;
+        
+        function animate(currentTime) {
+            requestAnimationFrame(animate);
+            if (!lastTimestamp) {
+                lastTimestamp = currentTime;
+                return;
+            }
+            
+            windTime += 0.02;
+            wind = Math.sin(windTime * 0.15) * 0.4;
+            
+            for (let flake of snowflakes) flake.update(wind);
+            
+            applyTransform();
+            
+            drawSkyAndMoon();
+            drawStars();
+            drawMountains();
+            for (let tree of pineTrees) tree.draw();
+            drawGround();
+            for (let flake of snowflakes) flake.draw();
+            
+            for (let i = 0; i < 80; i++) {
+                if (Math.random() < 0.05) {
+                    ctx.beginPath();
+                    ctx.arc(Math.random() * W, Math.random() * H, 1, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 250, 240, ${Math.random() * 0.4})`;
+                    ctx.fill();
+                }
+            }
+            
+            ctx.shadowBlur = 0;
+        }
+        
+        window.addEventListener('resize', () => {
+            dpr = window.devicePixelRatio || 1;
+            resizeCanvas();
+            applyTransform();
+        });
+        
+        initSnow();
+        initStars();
+        initTrees();
+        initGroundSnow();
+        resizeCanvas();
+        applyTransform();
+        animate();
+    })();
+</script>
+</body>
+</html>

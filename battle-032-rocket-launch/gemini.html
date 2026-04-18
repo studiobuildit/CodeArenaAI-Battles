@@ -1,0 +1,17 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Rocket Launch - Gemini</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}body{display:flex;align-items:center;justify-content:center}canvas{display:block}</style></head><body><canvas id="c"></canvas><script>
+(()=>{const W=540,H=960,c=document.getElementById("c"),x=c.getContext("2d"),TA=Math.PI*2,r=(a,b)=>a+Math.random()*(b-a);let d=1,s=1;function rs(){const vw=innerWidth,vh=innerHeight;s=Math.min(vw/W,vh/H);const cw=W*s,ch=H*s;d=Math.max(1,Math.min(3,devicePixelRatio||1));c.style.width=cw+"px";c.style.height=ch+"px";c.width=cw*d;c.height=ch*d;x.setTransform(d*s,0,0,d*s,0,0)}addEventListener("resize",rs,{passive:true});rs();
+let st="COUNTDOWN",timer=300,alt=0,vy=0,shake=0,frame=0,sep=false,bo=0;const p=[],stars=[];for(let i=0;i<120;i++)stars.push({x:r(0,W),y:r(0,H),s:r(.6,2),a:r(.2,1)});const rocket={x:W/2,y:H-200};
+function add(x,y,vx,vy,col,size){p.push({x,y,vx,vy,col,size,life:1});}
+function upd(){frame++;if(st==="COUNTDOWN"){timer--;if(timer<70)shake=(70-timer)*.08;if(timer<=0)st="LIFTOFF";}else{vy+=0.05;alt+=vy;shake=Math.min(5,vy);if(alt>1000&&st==="LIFTOFF")st="ASCENT";if(alt>5000&&st==="ASCENT"){st="SEPARATION";sep=true;}if(alt>8000&&st==="SEPARATION")st="SPACE";if(sep)bo+=2;const exY=rocket.y+80;add(rocket.x,exY,r(-1,1),r(5,9),"#ff4400",15);add(rocket.x,exY,r(-5,5),r(2,6),"#666",20);if(alt>15000){st="COUNTDOWN";timer=300;alt=0;vy=0;sep=false;bo=0;p.length=0;}}
+for(let i=p.length-1;i>=0;i--){const q=p[i];q.x+=q.vx;q.y+=q.vy-(st!=="COUNTDOWN"?vy*.5:0);q.life-=0.02;if(q.life<=0)p.splice(i,1);}
+}
+function dr(){const bg=Math.min(1,alt/8000),rr=Math.floor(0*(1-bg)),gg=Math.floor(100*(1-bg)),bb=Math.floor(200*(1-bg));x.fillStyle=`rgb(${rr},${gg},${bb})`;x.fillRect(0,0,W,H);x.fillStyle="#fff";x.globalAlpha=bg;for(const s of stars)x.fillRect(s.x,(s.y+alt*.1)%H,s.s,s.s);x.globalAlpha=1;
+x.save();if(shake>0)x.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);if(alt<H){x.fillStyle="#333";x.fillRect(0,H-120+alt,W,200);}
+for(const q of p){x.globalAlpha=q.life;x.fillStyle=q.col;x.beginPath();x.arc(q.x,q.y,q.size*q.life,0,TA);x.fill();}x.globalAlpha=1;
+const rx=rocket.x,ry=rocket.y;if(!sep||st==="SEPARATION"){x.fillStyle="#ccc";const off=sep?bo:0,by=sep?ry+off:ry;x.fillRect(rx-35-off,by+20,15,60);x.fillRect(rx+20+off,by+20,15,60);}
+x.fillStyle="#eee";x.fillRect(rx-15,ry,30,80);x.fillStyle="#f00";x.beginPath();x.moveTo(rx-15,ry);x.lineTo(rx+15,ry);x.lineTo(rx,ry-30);x.fill();x.fillStyle="#0cf";x.beginPath();x.arc(rx,ry+20,5,0,TA);x.fill();x.restore();
+if(st==="COUNTDOWN"){x.fillStyle="#fff";x.font="bold 80px Courier New";x.textAlign="center";const ct=Math.ceil(timer/60);x.fillText(ct>0?ct:"IGNITION",W/2,H/2);}
+x.fillStyle="#0f0";x.font="16px monospace";x.textAlign="left";x.fillText(`ALTITUDE: ${Math.floor(alt)}m`,20,40);x.fillText(`VELOCITY: ${Math.floor(vy*10)}m/s`,20,60);x.fillText(`STATUS: ${st}`,20,80);}
+function loop(){upd();dr();requestAnimationFrame(loop)}loop();
+})();
+</script></body></html>

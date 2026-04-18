@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spiral Galaxy Animation</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="galaxyCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('galaxyCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+
+        const starCount = 4000;
+        const arms = 3;
+        const tightness = 0.5;
+        const galaxyRadius = 240;
+        const rotationSpeed = 0.002;
+        
+        let stars = [];
+        let globalRotation = 0;
+
+        function initStars() {
+            stars = [];
+            for (let i = 0; i < starCount; i++) {
+                const distance = Math.pow(Math.random(), 2) * galaxyRadius;
+                const armOffset = (i % arms) * (Math.PI * 2 / arms);
+                const angle = distance * tightness + armOffset;
+                const spread = (galaxyRadius / (distance + 20)) * 15;
+                const offsetX = (Math.random() - 0.5) * spread * 2;
+                const offsetY = (Math.random() - 0.5) * spread * 2;
+                const twinkleSpeed = 0.02 + Math.random() * 0.05;
+                const phase = Math.random() * Math.PI * 2;
+
+                stars.push({
+                    dist: distance,
+                    angle: angle,
+                    xOffset: offsetX,
+                    yOffset: offsetY,
+                    size: Math.random() * 1.2 + 0.2,
+                    twinkleSpeed: twinkleSpeed,
+                    phase: phase,
+                    color: distance < 60 ? `hsla(40, 100%, 80%,` : `hsla(210, 80%, 80%,`
+                });
+            }
+        }
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+
+            canvas.width = vpw * dpr;
+            canvas.height = vph * dpr;
+
+            const scaleX = (vpw / W) * dpr;
+            const scaleY = (vph / H) * dpr;
+            ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        }
+
+        function draw() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, W, H);
+
+            const centerX = W / 2;
+            const centerY = H / 2;
+
+            const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, galaxyRadius);
+            gradient.addColorStop(0, 'rgba(255, 230, 180, 0.15)');
+            gradient.addColorStop(0.2, 'rgba(100, 150, 255, 0.05)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(centerX - galaxyRadius, centerY - galaxyRadius, galaxyRadius * 2, galaxyRadius * 2);
+
+            for (let i = 0; i < starCount; i++) {
+                const s = stars[i];
+                const currentAngle = s.angle + globalRotation;
+                const x = centerX + Math.cos(currentAngle) * s.dist + s.xOffset;
+                const y = centerY + Math.sin(currentAngle) * s.dist + s.yOffset;
+                const opacity = 0.4 + Math.abs(Math.sin(Date.now() * s.twinkleSpeed + s.phase)) * 0.6;
+                
+                ctx.fillStyle = s.color + opacity + ')';
+                ctx.beginPath();
+                ctx.arc(x, y, s.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            const coreGrad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 30);
+            coreGrad.addColorStop(0, '#fff');
+            coreGrad.addColorStop(0.4, 'rgba(255, 255, 200, 0.8)');
+            coreGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            
+            ctx.fillStyle = coreGrad;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 30, 0, Math.PI * 2);
+            ctx.fill();
+
+            globalRotation += rotationSpeed;
+            requestAnimationFrame(draw);
+        }
+
+        window.addEventListener('resize', resize);
+        initStars();
+        resize();
+        requestAnimationFrame(draw);
+    </script>
+</body>
+</html>

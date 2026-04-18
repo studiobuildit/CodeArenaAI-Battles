@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Flappy Bird - CodeArenaAI</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+            image-rendering: pixelated;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+
+        const GRAVITY = 0.6;
+        const FLAP_STRENGTH = -10;
+        const PIPE_SPEED = 4.5;
+        const PIPE_SPAWN_RATE = 100;
+        const PIPE_GAP = 220;
+        const PIPE_WIDTH = 90;
+
+        let bird = { x: 100, y: H / 2, velocity: 0, radius: 24, color: '#FFD700' };
+        let pipes = [];
+        let clouds = [];
+        let score = 0;
+        let frameCount = 0;
+
+        for(let i = 0; i < 5; i++) {
+            clouds.push({
+                x: Math.random() * W,
+                y: Math.random() * (H / 2),
+                speed: 0.5 + Math.random(),
+                w: 100 + Math.random() * 100
+            });
+        }
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+
+            canvas.width = vpw * dpr;
+            canvas.height = vph * dpr;
+
+            const scale = Math.min(vpw / W, vph / H);
+            const offsetX = (vpw - W * scale) / 2 * dpr;
+            const offsetY = (vph - H * scale) / 2 * dpr;
+
+            ctx.setTransform(scale * dpr, 0, 0, scale * dpr, offsetX, offsetY);
+        }
+
+        function spawnPipe() {
+            const minHeight = 100;
+            const maxHeight = H - PIPE_GAP - 100;
+            const topHeight = Math.floor(Math.random() * (maxHeight - minHeight + 1)) + minHeight;
+            pipes.push({ x: W, top: topHeight, passed: false });
+        }
+
+        function reset() {
+            bird.y = H / 2;
+            bird.velocity = 0;
+            pipes = [];
+            score = 0;
+            frameCount = 0;
+        }
+
+        function updateAI() {
+            let targetPipe = pipes.find(p => p.x + PIPE_WIDTH > bird.x - bird.radius);
+            let targetY = H / 2;
+            if (targetPipe) targetY = targetPipe.top + (PIPE_GAP / 2);
+            if (bird.y > targetY + 10) bird.velocity = FLAP_STRENGTH;
+        }
+
+        function draw() {
+            ctx.fillStyle = '#70c5ce';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            clouds.forEach(c => {
+                c.x -= c.speed;
+                if (c.x + c.w < 0) c.x = W;
+                ctx.beginPath();
+                ctx.roundRect(c.x, c.y, c.w, 40, 20);
+                ctx.fill();
+            });
+
+            pipes.forEach((p) => {
+                p.x -= PIPE_SPEED;
+                ctx.fillStyle = '#73be2e';
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 4;
+                ctx.fillRect(p.x, 0, PIPE_WIDTH, p.top);
+                ctx.strokeRect(p.x, 0, PIPE_WIDTH, p.top);
+                ctx.fillRect(p.x, p.top + PIPE_GAP, PIPE_WIDTH, H - (p.top + PIPE_GAP));
+                ctx.strokeRect(p.x, p.top + PIPE_GAP, PIPE_WIDTH, H - (p.top + PIPE_GAP));
+
+                if (!p.passed && p.x + PIPE_WIDTH < bird.x) {
+                    p.passed = true;
+                    score++;
+                }
+
+                if (
+                    bird.x + bird.radius > p.x && 
+                    bird.x - bird.radius < p.x + PIPE_WIDTH &&
+                    (bird.y - bird.radius < p.top || bird.y + bird.radius > p.top + PIPE_GAP)
+                ) {
+                    reset();
+                }
+            });
+
+            pipes = pipes.filter(p => p.x + PIPE_WIDTH > -50);
+            if (frameCount % PIPE_SPAWN_RATE === 0) spawnPipe();
+
+            updateAI();
+            bird.velocity += GRAVITY;
+            bird.y += bird.velocity;
+            if (bird.y + bird.radius > H || bird.y - bird.radius < 0) reset();
+
+            ctx.save();
+            ctx.translate(bird.x, bird.y);
+            ctx.rotate(Math.min(Math.PI/4, Math.max(-Math.PI/4, bird.velocity * 0.05)));
+            ctx.fillStyle = bird.color;
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(0, 0, bird.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(12, -8, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(15, -8, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.ellipse(-10, 5, 12, 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.fillStyle = '#fff';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 8;
+            ctx.font = 'bold 80px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.strokeText(score, W / 2, 150);
+            ctx.fillText(score, W / 2, 150);
+
+            ctx.font = '24px monospace';
+            ctx.fillStyle = '#000';
+            ctx.fillText("AI AUTOPILOT ACTIVE", W / 2, 200);
+
+            frameCount++;
+            requestAnimationFrame(draw);
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        reset();
+        requestAnimationFrame(draw);
+    </script>
+</body>
+</html>

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Wrecking Ball Demolition</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: #000000;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        .canvas-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+        }
+
+        canvas {
+            display: block;
+            box-shadow: 0 0 0 2px #3d2e1a;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+<div class="canvas-wrapper">
+    <canvas id="gameCanvas" width="540" height="960"></canvas>
+</div>
+
+<script>
+    (function() {
+        const LOGIC_W = 540;
+        const LOGIC_H = 960;
+
+        const canvas = document.getElementById('gameCanvas');
+        let ctx = canvas.getContext('2d');
+
+        // ----- Pendulum / wrecking ball -----
+        const pivotX = LOGIC_W * 0.5;
+        const pivotY = 108;
+        const ropeLength = 298;
+        const ballRadius = 26;
+
+        let angle = 0.42;
+        let omega = 0.0035;
+        const ANG_ACCEL = 0.0198;
+        const DAMP = 0.9994;
+
+        // ----- Brick grid (2D array) -----
+        const GRID_COLS = 11;
+        const GRID_ROWS = 14;
+        const BRICK_W = 38;
+        const BRICK_H = 16;
+        const BRICK_GAP = 2;
+        const cellW = BRICK_W + BRICK_GAP;
+        const cellH = BRICK_H + BRICK_GAP;
+        const gridOriginX = (LOGIC_W - (GRID_COLS * cellW - BRICK_GAP)) * 0.5;
+        const gridOriginY = 318;
+
+        let bricks = [];
+        let bricksRemaining = 0;
+
+        function buildBrickGrid() {
+            bricks = [];
+            bricksRemaining = 0;
+            for (let r = 0; r < GRID_ROWS; r++) {
+                const row = [];
+                for (let c = 0; c < GRID_COLS; c++) {
+                    const alive = true;
+                    row.push({
+                        alive: alive,
+                        x: gridOriginX + c * cellW,
+                        y: gridOriginY + r * cellH,
+                        w: BRICK_W,
+                        h: BRICK_H,
+                        hue: 8 + (r * 3 + c * 2) % 18
+                    });
+                    bricksRemaining++;
+                }
+                bricks.push(row);
+            }
+        }
+
+        // ----- FX -----
+        let dustParticles = [];
+        let rubblePieces = [];
+        let shakeX = 0;
+        let shakeY = 0;
+        let shakeMag = 0;
+        let flashAlpha = 0;
+
+        let resetTimer = 0;
+        let pendingReset = false;
+
+        let animationId = null;
+
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            const targetRatio = LOGIC_W / LOGIC_H;
+
+            let drawWidth = containerWidth;
+            let drawHeight = containerWidth / targetRatio;
+
+            if (drawHeight > containerHeight) {
+                drawHeight = containerHeight;
+                drawWidth = containerHeight * targetRatio;
+            }
+
+            canvas.style.width = `${drawWidth}px`;
+            canvas.style.height = `${drawHeight}px`;
+            canvas.width = LOGIC_W;
+            canvas.height = LOGIC_H;
+            ctx = canvas.getContext('2d');
+        }
+
+        function ballPosition() {
+            const bx = pivotX + Math.sin(angle) * ropeLength;
+            const by = pivotY + Math.cos(angle) * ropeLength;
+            return { x: bx, y: by };
+        }
+
+        function circleRectHit(cx, cy, r, rx, ry, rw, rh) {
+            const nx = Math.max(rx, Math.min(cx, rx + rw));
+            const ny = Math.max(ry, Math.min(cy, ry + rh));
+            const dx = cx - nx;
+            const dy = cy - ny;
+            return dx * dx + dy * dy < r * r;
+        }
+
+        function spawnDust(px, py, baseHue) {
+            const n = 14 + (Math.random() * 8 | 0);
+            for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const sp = 0.8 + Math.random() * 3.2;
+                dustParticles.push({
+                    x: px + (Math.random() - 0.5) * BRICK_W,
+                    y: py + (Math.random() - 0.5) * BRICK_H,
+                    vx: Math.cos(a) * sp,
+                    vy: Math.sin(a) * sp - 1.2,
+                    life: 0,
+                    maxLife: 38 + Math.random() * 22,
+                    size: 1.2 + Math.random() * 2.4,
+                    hue: baseHue + (Math.random() - 0.5) * 12
+                });
+            }
+        }
+
+        function spawnRubble(px, py, baseHue) {
+            const chunks = 4 + (Math.random() * 4 | 0);
+            for (let i = 0; i < chunks; i++) {
+                const w = 6 + Math.random() * 10;
+                const h = 5 + Math.random() * 9;
+                const a = (Math.random() - 0.5) * Math.PI * 0.9;
+                const sp = 1.5 + Math.random() * 4.5;
+                rubblePieces.push({
+                    x: px + (Math.random() - 0.5) * (BRICK_W * 0.6),
+                    y: py + (Math.random() - 0.5) * (BRICK_H * 0.6),
+                    vx: Math.sin(angle) * 2 + Math.cos(a) * sp,
+                    vy: -Math.random() * 3.2 - 1.5,
+                    rot: Math.random() * Math.PI * 2,
+                    vr: (Math.random() - 0.5) * 0.35,
+                    w: w,
+                    h: h,
+                    life: 0,
+                    maxLife: 70 + Math.random() * 50,
+                    hue: baseHue + (Math.random() - 0.5) * 20
+                });
+            }
+        }
+
+        function applyImpact(intensity) {
+            shakeMag = Math.min(shakeMag + intensity * 18, 22);
+            flashAlpha = Math.min(flashAlpha + intensity * 0.45, 0.55);
+            omega += (Math.random() - 0.5) * 0.012 * intensity;
+        }
+
+        function collideBallWithBricks(bx, by) {
+            for (let r = 0; r < GRID_ROWS; r++) {
+                for (let c = 0; c < GRID_COLS; c++) {
+                    const b = bricks[r][c];
+                    if (!b.alive) continue;
+                    if (!circleRectHit(bx, by, ballRadius, b.x, b.y, b.w, b.h)) continue;
+
+                    b.alive = false;
+                    bricksRemaining--;
+                    const cx = b.x + b.w * 0.5;
+                    const cy = b.y + b.h * 0.5;
+                    spawnDust(cx, cy, b.hue);
+                    spawnRubble(cx, cy, b.hue);
+                    applyImpact(1);
+
+                    const nx = (bx < cx) ? -1 : 1;
+                    omega += nx * 0.0065;
+                    return;
+                }
+            }
+        }
+
+        function updatePendulum() {
+            omega += -ANG_ACCEL * Math.sin(angle);
+            omega *= DAMP;
+            angle += omega;
+        }
+
+        function updateParticles() {
+            for (let i = dustParticles.length - 1; i >= 0; i--) {
+                const p = dustParticles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.08;
+                p.vx *= 0.985;
+                p.life++;
+                if (p.life > p.maxLife) dustParticles.splice(i, 1);
+            }
+            const groundY = LOGIC_H - 72;
+            for (let i = rubblePieces.length - 1; i >= 0; i--) {
+                const p = rubblePieces[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.22;
+                p.vx *= 0.992;
+                p.rot += p.vr;
+                p.life++;
+                if (p.y + p.h * 0.5 > groundY) {
+                    p.y = groundY - p.h * 0.5;
+                    p.vy *= -0.28;
+                    p.vx *= 0.72;
+                    p.vr *= 0.85;
+                }
+                if (p.life > p.maxLife) rubblePieces.splice(i, 1);
+            }
+        }
+
+        function updateShake() {
+            if (shakeMag > 0.15) {
+                shakeX = (Math.random() - 0.5) * shakeMag;
+                shakeY = (Math.random() - 0.5) * shakeMag;
+                shakeMag *= 0.88;
+            } else {
+                shakeMag = 0;
+                shakeX = 0;
+                shakeY = 0;
+            }
+            if (flashAlpha > 0.001) {
+                flashAlpha *= 0.82;
+            } else {
+                flashAlpha = 0;
+            }
+        }
+
+        function checkAutoReset() {
+            if (bricksRemaining > 0 || pendingReset) return;
+            pendingReset = true;
+            resetTimer = 0;
+        }
+
+        function tickReset() {
+            if (!pendingReset) return;
+            resetTimer++;
+            if (resetTimer > 72) {
+                pendingReset = false;
+                dustParticles.length = 0;
+                rubblePieces.length = 0;
+                shakeMag = 0;
+                flashAlpha = 0;
+                angle = 0.38 + Math.random() * 0.12;
+                omega = 0.002 + Math.random() * 0.004;
+                buildBrickGrid();
+            }
+        }
+
+        function drawSkyAndGround() {
+            const g = ctx.createLinearGradient(0, 0, 0, LOGIC_H);
+            g.addColorStop(0, '#1a2a44');
+            g.addColorStop(0.45, '#3d5a7a');
+            g.addColorStop(0.78, '#8a9eac');
+            g.addColorStop(1, '#c4ccd2');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, LOGIC_W, LOGIC_H);
+
+            const gy = LOGIC_H - 72;
+            const gg = ctx.createLinearGradient(0, gy, 0, LOGIC_H);
+            gg.addColorStop(0, '#4a3d32');
+            gg.addColorStop(0.5, '#2d241c');
+            gg.addColorStop(1, '#151210');
+            ctx.fillStyle = gg;
+            ctx.fillRect(0, gy, LOGIC_W, LOGIC_H - gy);
+
+            ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, gy + 1);
+            ctx.lineTo(LOGIC_W, gy + 1);
+            ctx.stroke();
+        }
+
+        function drawCraneArm() {
+            ctx.strokeStyle = '#2a2a2a';
+            ctx.lineWidth = 10;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(pivotX - 120, pivotY - 8);
+            ctx.lineTo(pivotX + 120, pivotY - 8);
+            ctx.stroke();
+            ctx.fillStyle = '#333';
+            ctx.fillRect(pivotX - 14, pivotY - 22, 28, 26);
+            ctx.strokeStyle = '#111';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(pivotX - 14, pivotY - 22, 28, 26);
+        }
+
+        function drawBricks() {
+            for (let r = 0; r < GRID_ROWS; r++) {
+                for (let c = 0; c < GRID_COLS; c++) {
+                    const b = bricks[r][c];
+                    if (!b.alive) continue;
+                    const sat = 62 + (r % 3) * 6;
+                    const light = 48 + (c % 4) * 4;
+                    ctx.fillStyle = `hsl(${b.hue}, ${sat}%, ${light}%)`;
+                    ctx.fillRect(b.x, b.y, b.w, b.h);
+                    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
+                    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+                    ctx.fillRect(b.x + 2, b.y + 2, b.w - 4, 3);
+                }
+            }
+        }
+
+        function drawRopeAndBall(bx, by) {
+            const ux = Math.sin(angle);
+            const uy = Math.cos(angle);
+            const ax = bx - ux * ballRadius;
+            const ay = by - uy * ballRadius;
+
+            ctx.strokeStyle = '#1f1f1f';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(pivotX, pivotY);
+            ctx.lineTo(ax, ay);
+            ctx.stroke();
+
+            const ballGrad = ctx.createRadialGradient(bx - 8, by - 10, 4, bx, by, ballRadius);
+            ballGrad.addColorStop(0, '#9a9a9a');
+            ballGrad.addColorStop(0.55, '#4a4a4a');
+            ballGrad.addColorStop(1, '#1a1a1a');
+            ctx.fillStyle = ballGrad;
+            ctx.beginPath();
+            ctx.arc(bx, by, ballRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#0a0a0a';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(bx - 6, by - 8, ballRadius * 0.35, 0, Math.PI * 1.1);
+            ctx.stroke();
+        }
+
+        function drawDust() {
+            for (let i = 0; i < dustParticles.length; i++) {
+                const p = dustParticles[i];
+                const t = 1 - p.life / p.maxLife;
+                ctx.globalAlpha = 0.15 + (1 - t) * 0.55;
+                ctx.fillStyle = `hsla(${p.hue}, 35%, 70%, ${0.3 + (1 - t) * 0.7})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size * (0.7 + 0.3 * (1 - t)), 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        function drawRubble() {
+            for (let i = 0; i < rubblePieces.length; i++) {
+                const p = rubblePieces[i];
+                const t = p.life / p.maxLife;
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.rot);
+                ctx.fillStyle = `hsl(${p.hue}, 45%, ${38 + t * 12}%)`;
+                ctx.fillRect(-p.w * 0.5, -p.h * 0.5, p.w, p.h);
+                ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+                ctx.strokeRect(-p.w * 0.5, -p.h * 0.5, p.w, p.h);
+                ctx.restore();
+            }
+        }
+
+        function drawHud() {
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.font = 'bold 13px ui-monospace, Consolas, monospace';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.fillText('WRECKING BALL', 19, 29);
+            ctx.fillStyle = 'rgba(255,248,230,0.92)';
+            ctx.fillText('WRECKING BALL', 18, 28);
+            ctx.font = '12px ui-monospace, Consolas, monospace';
+            ctx.fillStyle = 'rgba(0,0,0,0.45)';
+            ctx.fillText('BRICKS: ' + bricksRemaining, 19, 49);
+            ctx.fillStyle = 'rgba(220,230,240,0.9)';
+            ctx.fillText('BRICKS: ' + bricksRemaining, 18, 48);
+            if (pendingReset) {
+                ctx.font = 'bold 15px ui-monospace, Consolas, monospace';
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.textAlign = 'center';
+                ctx.fillText('SITE CLEAR — RESETTING', LOGIC_W * 0.5 + 1, LOGIC_H * 0.42 + 1);
+                ctx.fillStyle = 'rgba(255,240,200,0.95)';
+                ctx.fillText('SITE CLEAR — RESETTING', LOGIC_W * 0.5, LOGIC_H * 0.42);
+            }
+            ctx.restore();
+        }
+
+        function drawFlash() {
+            if (flashAlpha <= 0.001) return;
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.fillStyle = `rgba(255,255,255,${flashAlpha * 0.55})`;
+            ctx.fillRect(0, 0, LOGIC_W, LOGIC_H);
+            ctx.restore();
+        }
+
+        function drawScene() {
+            if (!ctx) return;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, LOGIC_W, LOGIC_H);
+
+            ctx.save();
+            ctx.translate(shakeX, shakeY);
+
+            drawSkyAndGround();
+            drawCraneArm();
+            drawBricks();
+
+            const ball = ballPosition();
+            drawRopeAndBall(ball.x, ball.y);
+            drawRubble();
+            drawDust();
+
+            ctx.restore();
+
+            drawFlash();
+            drawHud();
+        }
+
+        function updateGame() {
+            updatePendulum();
+            const ball = ballPosition();
+            collideBallWithBricks(ball.x, ball.y);
+            updateParticles();
+            updateShake();
+            checkAutoReset();
+            tickReset();
+        }
+
+        function animate() {
+            updateGame();
+            drawScene();
+            animationId = requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', function() {
+            resizeCanvas();
+            ctx = canvas.getContext('2d');
+        });
+
+        window.addEventListener('orientationchange', function() {
+            setTimeout(resizeCanvas, 20);
+        });
+
+        function init() {
+            buildBrickGrid();
+            resizeCanvas();
+            animate();
+        }
+
+        init();
+    })();
+</script>
+</body>
+</html>

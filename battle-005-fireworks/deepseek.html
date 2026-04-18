@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Fireworks Spectacular | Night Sky Celebration</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #010105;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+        canvas {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, #0a0f1a 0%, #020308 100%);
+        }
+    </style>
+</head>
+<body>
+<canvas id="fireworksCanvas"></canvas>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('fireworksCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height, dpr = 1;
+
+        function rand(min, max) {
+            return min + Math.random() * (max - min);
+        }
+
+        class Rocket {
+            constructor(x, targetY, colorHue) {
+                this.x = x;
+                this.y = height;
+                this.targetY = targetY;
+                this.speed = rand(4.5, 7.2);
+                this.exploded = false;
+                this.trail = [];
+                this.colorHue = colorHue !== undefined ? colorHue : rand(0, 360);
+                this.size = 2.5;
+            }
+
+            update() {
+                if (!this.exploded) {
+                    this.y -= this.speed;
+                    this.trail.unshift({ x: this.x, y: this.y });
+                    if (this.trail.length > 12) this.trail.pop();
+
+                    if (this.y <= this.targetY) {
+                        this.exploded = true;
+                        createExplosion(this.x, this.y, this.colorHue);
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            draw() {
+                for (let i = 0; i < this.trail.length; i++) {
+                    let t = this.trail[i];
+                    let alpha = 0.6 * (1 - i / this.trail.length);
+                    ctx.beginPath();
+                    ctx.arc(t.x, t.y, this.size * 0.7, 0, Math.PI*2);
+                    ctx.fillStyle = `hsla(${this.colorHue}, 100%, 65%, ${alpha})`;
+                    ctx.fill();
+                }
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+                ctx.fillStyle = `hsl(${this.colorHue}, 100%, 65%)`;
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = `hsla(${this.colorHue}, 100%, 55%, 0.5)`;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        class FireworkParticle {
+            constructor(x, y, colorHue, angle, speed, size, gravity = 0.15) {
+                this.x = x;
+                this.y = y;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.colorHue = colorHue + rand(-20, 20);
+                this.size = size;
+                this.life = 1.0;
+                this.decay = rand(0.012, 0.022);
+                this.gravity = gravity;
+                this.alpha = 0.9;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += this.gravity;
+                this.life -= this.decay;
+                this.alpha = this.life * 0.9;
+                return this.life > 0.02;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size * (0.6 + (1-this.life)*0.5), 0, Math.PI*2);
+                ctx.fillStyle = `hsla(${this.colorHue}, 100%, 65%, ${this.alpha})`;
+                ctx.shadowBlur = 6;
+                ctx.shadowColor = `hsla(${this.colorHue}, 100%, 50%, 0.4)`;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        class Sparkle {
+            constructor(x, y, colorHue) {
+                this.x = x;
+                this.y = y;
+                this.vx = rand(-2.5, 2.5);
+                this.vy = rand(-2.5, 1.5);
+                this.life = 0.7;
+                this.size = rand(1.5, 3.5);
+                this.colorHue = colorHue + rand(-30, 30);
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.1;
+                this.life -= 0.025;
+                return this.life > 0;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.rect(this.x, this.y, this.size, this.size);
+                ctx.fillStyle = `hsla(${this.colorHue}, 100%, 70%, ${this.life})`;
+                ctx.fill();
+            }
+        }
+
+        let rockets = [];
+        let particles = [];
+        let sparkles = [];
+
+        function createExplosion(x, y, baseHue) {
+            const particleCount = Math.floor(rand(45, 85));
+            const pattern = Math.floor(Math.random() * 4);
+
+            if (pattern === 0) {
+                for (let i = 0; i < particleCount; i++) {
+                    let angle = rand(0, Math.PI * 2);
+                    let speed = rand(2.2, 5.5);
+                    let size = rand(2.2, 4.5);
+                    let hue = baseHue + rand(-35, 45);
+                    particles.push(new FireworkParticle(x, y, hue, angle, speed, size, 0.12));
+                }
+            }
+            else if (pattern === 1) {
+                let ringCount = Math.floor(particleCount * 0.7);
+                for (let i = 0; i < ringCount; i++) {
+                    let angle = (i / ringCount) * Math.PI * 2 + rand(-0.2, 0.2);
+                    let speed = rand(3.2, 6);
+                    let size = rand(2.5, 4.2);
+                    let hue = baseHue + rand(-20, 40);
+                    particles.push(new FireworkParticle(x, y, hue, angle, speed, size, 0.1));
+                }
+                for (let i = 0; i < 18; i++) {
+                    let angle = rand(0, Math.PI*2);
+                    let speed = rand(1.8, 3.5);
+                    particles.push(new FireworkParticle(x, y, baseHue+rand(-30,30), angle, speed, rand(2,3.5), 0.08));
+                }
+            }
+            else if (pattern === 2) {
+                let clusters = 6;
+                for (let c = 0; c < clusters; c++) {
+                    let baseAngle = (c / clusters) * Math.PI * 2;
+                    for (let i = 0; i < 8; i++) {
+                        let angle = baseAngle + rand(-0.35, 0.35);
+                        let speed = rand(3.5, 6.2);
+                        let size = rand(2.2, 4);
+                        let hue = baseHue + rand(-25, 45);
+                        particles.push(new FireworkParticle(x, y, hue, angle, speed, size, 0.11));
+                    }
+                }
+            }
+            else {
+                for (let i = 0; i < particleCount; i++) {
+                    let angle = rand(0, Math.PI*2);
+                    let speed = rand(2, 6.8);
+                    let size = rand(2, 4.8);
+                    let hue = baseHue + rand(-40, 60);
+                    particles.push(new FireworkParticle(x, y, hue, angle, speed, size, 0.13));
+                }
+            }
+
+            let sparkleCount = Math.floor(rand(15, 35));
+            for (let i = 0; i < sparkleCount; i++) {
+                sparkles.push(new Sparkle(x + rand(-8,8), y + rand(-8,8), baseHue));
+            }
+
+            for (let i=0;i<8;i++) {
+                particles.push(new FireworkParticle(x+rand(-6,6), y+rand(-6,6), baseHue+rand(-40,40), rand(0,Math.PI*2), rand(0.8,2), rand(2,3.5), 0.05));
+            }
+        }
+
+        function launchRandomFirework() {
+            let x = rand(70, width - 70);
+            let targetY = rand(70, height * 0.65);
+            let hue = rand(0, 360);
+            rockets.push(new Rocket(x, targetY, hue));
+        }
+
+        function updateFireworks() {
+            for (let i=0; i<rockets.length; i++) {
+                let alive = rockets[i].update();
+                if (!alive) {
+                    rockets.splice(i,1);
+                    i--;
+                }
+            }
+            for (let i=0; i<particles.length; i++) {
+                let alive = particles[i].update();
+                if (!alive) {
+                    particles.splice(i,1);
+                    i--;
+                }
+            }
+            for (let i=0; i<sparkles.length; i++) {
+                let alive = sparkles[i].update();
+                if (!alive) {
+                    sparkles.splice(i,1);
+                    i--;
+                }
+            }
+
+            if (rockets.length < 7 && Math.random() < 0.035) {
+                launchRandomFirework();
+            }
+            if (rockets.length < 9 && Math.random() < 0.018) {
+                launchRandomFirework();
+                setTimeout(() => launchRandomFirework(), 80);
+            }
+        }
+
+        function drawBackground() {
+            let grad = ctx.createLinearGradient(0, 0, 0, height);
+            grad.addColorStop(0, "#02050f");
+            grad.addColorStop(0.7, "#030617");
+            grad.addColorStop(1, "#010003");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+            for (let i = 0; i < 300; i++) {
+                if (Math.random() > 0.97) {
+                    ctx.fillStyle = `rgba(255, 220, 180, ${Math.random() * 0.5})`;
+                    ctx.fillRect(Math.random() * width, Math.random() * height, 1.2, 1.2);
+                }
+            }
+            ctx.beginPath();
+            ctx.arc(width - 70, 65, 40, 0, Math.PI*2);
+            ctx.fillStyle = "rgba(255, 220, 160, 0.05)";
+            ctx.fill();
+        }
+
+        function drawAll() {
+            ctx.shadowBlur = 0;
+            for (let r of rockets) r.draw();
+            for (let p of particles) p.draw();
+            for (let s of sparkles) s.draw();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawBloom() {
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = "rgba(20, 10, 30, 0.08)";
+            ctx.fillRect(0, 0, width, height);
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        function resizeCanvas() {
+            dpr = Math.max(1, window.devicePixelRatio || 1);
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = Math.max(1, Math.floor(width * dpr));
+            canvas.height = Math.max(1, Math.floor(height * dpr));
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        let lastTimestamp = performance.now();
+        let frameDelay = 1000 / 55;
+
+        function animate(currentTime) {
+            requestAnimationFrame(animate);
+            let delta = currentTime - lastTimestamp;
+            if (delta < frameDelay) return;
+            lastTimestamp = currentTime;
+
+            updateFireworks();
+            drawBackground();
+            drawAll();
+            drawBloom();
+        }
+
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+        });
+
+        resizeCanvas();
+        for (let i = 0; i < 5; i++) {
+            setTimeout(() => launchRandomFirework(), i * 200);
+        }
+        requestAnimationFrame(animate);
+    })();
+</script>
+</body>
+</html>

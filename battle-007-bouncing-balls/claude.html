@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bouncing Balls Physics</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const W = 400;
+const H = 400;
+
+let vpw = Math.max(1, window.innerWidth);
+let vph = Math.max(1, window.innerHeight);
+let dpr = 1;
+
+function syncViewport() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  vpw = Math.max(1, window.innerWidth);
+  vph = Math.max(1, window.innerHeight);
+  canvas.width = Math.floor(vpw * dpr);
+  canvas.height = Math.floor(vph * dpr);
+}
+
+function beginFrame() {
+  syncViewport();
+  ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+}
+
+const GRAVITY = 0.35;
+const DAMPING = 0.985;
+const WALL_RESTITUTION = 0.82;
+const BALL_RESTITUTION = 0.9;
+const NUM_BALLS = 20;
+
+class Ball {
+  constructor() {
+    this.r = 8 + Math.random() * 18;
+    this.mass = this.r * this.r;
+    this.x = this.r + Math.random() * (W - this.r * 2);
+    this.y = this.r + Math.random() * (H * 0.5);
+    this.vx = (Math.random() - 0.5) * 6;
+    this.vy = (Math.random() - 0.5) * 3;
+    this.hue = Math.floor(Math.random() * 360);
+    this.sat = 65 + Math.random() * 30;
+    this.light = 50 + Math.random() * 15;
+  }
+
+  update() {
+    this.vy += GRAVITY;
+    this.vx *= DAMPING;
+    this.vy *= DAMPING;
+    this.x += this.vx;
+    this.y += this.vy;
+
+    if (this.x - this.r < 0) {
+      this.x = this.r;
+      this.vx = Math.abs(this.vx) * WALL_RESTITUTION;
+    } else if (this.x + this.r > W) {
+      this.x = W - this.r;
+      this.vx = -Math.abs(this.vx) * WALL_RESTITUTION;
+    }
+
+    if (this.y - this.r < 0) {
+      this.y = this.r;
+      this.vy = Math.abs(this.vy) * WALL_RESTITUTION;
+    } else if (this.y + this.r > H) {
+      this.y = H - this.r;
+      this.vy = -Math.abs(this.vy) * WALL_RESTITUTION;
+      if (Math.abs(this.vy) < 0.5) {
+        this.vy = -(2 + Math.random() * 4);
+        this.vx += (Math.random() - 0.5) * 3;
+      }
+    }
+  }
+
+  draw() {
+    ctx.beginPath();
+    ctx.ellipse(this.x, H - 4, this.r * 0.7, 3, 0, 0, Math.PI * 2);
+    const shadowAlpha = Math.max(0, 0.15 * (1 - (H - this.y) / H));
+    ctx.fillStyle = `rgba(255,255,255,${shadowAlpha})`;
+    ctx.fill();
+
+    const grad = ctx.createRadialGradient(
+      this.x - this.r * 0.3, this.y - this.r * 0.3, this.r * 0.1,
+      this.x, this.y, this.r
+    );
+    grad.addColorStop(0, `hsla(${this.hue}, ${this.sat}%, ${this.light + 25}%, 1)`);
+    grad.addColorStop(0.6, `hsla(${this.hue}, ${this.sat}%, ${this.light}%, 1)`);
+    grad.addColorStop(1, `hsla(${this.hue}, ${this.sat}%, ${this.light - 15}%, 1)`);
+
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    const specGrad = ctx.createRadialGradient(
+      this.x - this.r * 0.35, this.y - this.r * 0.35, 0,
+      this.x - this.r * 0.2, this.y - this.r * 0.2, this.r * 0.6
+    );
+    specGrad.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+    specGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
+    specGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = specGrad;
+    ctx.fill();
+
+    const glowGrad = ctx.createRadialGradient(this.x, this.y, this.r * 0.8, this.x, this.y, this.r * 1.6);
+    glowGrad.addColorStop(0, `hsla(${this.hue}, ${this.sat}%, ${this.light}%, 0.15)`);
+    glowGrad.addColorStop(1, `hsla(${this.hue}, ${this.sat}%, ${this.light}%, 0)`);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r * 1.6, 0, Math.PI * 2);
+    ctx.fillStyle = glowGrad;
+    ctx.fill();
+  }
+}
+
+function resolveBallCollision(a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const minDist = a.r + b.r;
+
+  if (dist < minDist && dist > 0.001) {
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    const overlap = (minDist - dist) / 2;
+    a.x -= nx * overlap;
+    a.y -= ny * overlap;
+    b.x += nx * overlap;
+    b.y += ny * overlap;
+
+    const dvx = a.vx - b.vx;
+    const dvy = a.vy - b.vy;
+    const dvDotN = dvx * nx + dvy * ny;
+
+    if (dvDotN > 0) {
+      const totalMass = a.mass + b.mass;
+      const impulse = (2 * dvDotN * BALL_RESTITUTION) / totalMass;
+
+      a.vx -= impulse * b.mass * nx;
+      a.vy -= impulse * b.mass * ny;
+      b.vx += impulse * a.mass * nx;
+      b.vy += impulse * a.mass * ny;
+    }
+  }
+}
+
+const balls = [];
+for (let i = 0; i < NUM_BALLS; i++) {
+  let attempts = 0;
+  let ball;
+  do {
+    ball = new Ball();
+    attempts++;
+  } while (
+    attempts < 100 &&
+    balls.some(b => {
+      const dx = b.x - ball.x;
+      const dy = b.y - ball.y;
+      return Math.sqrt(dx * dx + dy * dy) < b.r + ball.r + 2;
+    })
+  );
+  balls.push(ball);
+}
+
+function animate() {
+  beginFrame();
+  ctx.fillStyle = 'rgba(5, 5, 15, 0.92)';
+  ctx.fillRect(0, 0, W, H);
+
+  for (const ball of balls) {
+    ball.update();
+  }
+
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 0; i < balls.length; i++) {
+      for (let j = i + 1; j < balls.length; j++) {
+        resolveBallCollision(balls[i], balls[j]);
+      }
+    }
+  }
+
+  balls.sort((a, b) => a.y - b.y);
+  for (const ball of balls) {
+    ball.draw();
+  }
+
+  requestAnimationFrame(animate);
+}
+
+syncViewport();
+window.addEventListener('resize', syncViewport);
+animate();
+</script>
+</body>
+</html>

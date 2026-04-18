@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bouncing Physics Balls</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0a0a0a;
+            width: 100vw;
+            height: 100vh;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width = 0, height = 0, dpr = 1;
+        const balls = [];
+        const ballCount = 20;
+
+        const gravity = 0.25;
+        const friction = 0.98;
+        const elasticity = 0.9;
+
+        function init() {
+            const ndpr = Math.max(1, window.devicePixelRatio || 1);
+            const nw = Math.max(1, window.innerWidth);
+            const nh = Math.max(1, window.innerHeight);
+            const changed = nw !== width || nh !== height || ndpr !== dpr;
+            dpr = ndpr;
+            width = nw;
+            height = nh;
+            canvas.width = Math.floor(width * dpr);
+            canvas.height = Math.floor(height * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            if (!changed && balls.length === ballCount) return;
+
+            balls.length = 0;
+            for (let i = 0; i < ballCount; i++) {
+                const radius = Math.random() * 20 + 10;
+                balls.push({
+                    x: Math.random() * (width - radius * 2) + radius,
+                    y: Math.random() * (height - radius * 2) + radius,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    radius: radius,
+                    color: `hsl(${Math.random() * 360}, 70%, 60%)`,
+                    mass: radius
+                });
+            }
+        }
+
+        function resolveCollision(b1, b2) {
+            const dx = b2.x - b1.x;
+            const dy = b2.y - b1.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < 1e-6) return;
+
+            if (distance < b1.radius + b2.radius) {
+                const overlap = b1.radius + b2.radius - distance;
+                const nx = dx / distance;
+                const ny = dy / distance;
+
+                b1.x -= nx * overlap / 2;
+                b1.y -= ny * overlap / 2;
+                b2.x += nx * overlap / 2;
+                b2.y += ny * overlap / 2;
+
+                const v1n = b1.vx * nx + b1.vy * ny;
+                const v2n = b2.vx * nx + b2.vy * ny;
+
+                const m1 = b1.mass;
+                const m2 = b2.mass;
+
+                const newV1n = (elasticity * m2 * (v2n - v1n) + m1 * v1n + m2 * v2n) / (m1 + m2);
+                const newV2n = (elasticity * m1 * (v1n - v2n) + m1 * v1n + m2 * v2n) / (m1 + m2);
+
+                b1.vx += (newV1n - v1n) * nx;
+                b1.vy += (newV1n - v1n) * ny;
+                b2.vx += (newV2n - v2n) * nx;
+                b2.vy += (newV2n - v2n) * ny;
+            }
+        }
+
+        function update() {
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, width, height);
+
+            for (let i = 0; i < balls.length; i++) {
+                const b = balls[i];
+
+                b.vy += gravity;
+
+                b.x += b.vx;
+                b.y += b.vy;
+
+                if (b.x + b.radius > width) {
+                    b.x = width - b.radius;
+                    b.vx *= -friction;
+                } else if (b.x - b.radius < 0) {
+                    b.x = b.radius;
+                    b.vx *= -friction;
+                }
+
+                if (b.y + b.radius > height) {
+                    b.y = height - b.radius;
+                    b.vy *= -friction;
+                    b.vx *= friction;
+                } else if (b.y - b.radius < 0) {
+                    b.y = b.radius;
+                    b.vy *= -friction;
+                }
+
+                for (let j = i + 1; j < balls.length; j++) {
+                    resolveCollision(b, balls[j]);
+                }
+
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+                ctx.fillStyle = b.color;
+                ctx.fill();
+            }
+
+            requestAnimationFrame(update);
+        }
+
+        window.addEventListener('resize', init);
+
+        init();
+        update();
+    </script>
+</body>
+</html>

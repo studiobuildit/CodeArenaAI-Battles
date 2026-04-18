@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Pendulum Wave | Rainbow Pendulums</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: black;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: black;
+        }
+    </style>
+</head>
+<body>
+<canvas id="pendulumCanvas"></canvas>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('pendulumCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const LOGICAL_W = 540;
+        const LOGICAL_H = 960;
+        
+        const PENDULUM_COUNT = 15;
+        const START_X = 55;
+        const END_X = LOGICAL_W - 55;
+        const SPACING = (END_X - START_X) / (PENDULUM_COUNT - 1);
+        const PIVOT_Y = 130;
+        
+        const G = 1100;
+        
+        const rainbowColors = [
+            "#FF4D4D", "#FF8C42", "#FFD966", "#D4E157", "#66BB6A",
+            "#4DB6AC", "#26C6DA", "#29B6F6", "#42A5F5", "#7E57C2",
+            "#AB47BC", "#EC407A", "#FF7043", "#FFA270", "#B0BEC5"
+        ];
+        
+        let pendulums = [];
+        let sparkles = [];
+        let lastFrameTime = 0;
+        let dpr = window.devicePixelRatio || 1;
+        let viewportW = window.innerWidth;
+        let viewportH = window.innerHeight;
+        
+        function resizeCanvas() {
+            viewportW = window.innerWidth;
+            viewportH = window.innerHeight;
+            canvas.width = viewportW * dpr;
+            canvas.height = viewportH * dpr;
+            canvas.style.width = `${viewportW}px`;
+            canvas.style.height = `${viewportH}px`;
+            const scaleX = (viewportW * dpr) / LOGICAL_W;
+            const scaleY = (viewportH * dpr) / LOGICAL_H;
+            ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        }
+        
+        class Pendulum {
+            constructor(x, index, length, color) {
+                this.x = x;
+                this.length = length;
+                this.color = color;
+                this.index = index;
+                this.angle = 0.32 * Math.sin((index / PENDULUM_COUNT) * Math.PI * 1.8);
+                this.angularVelocity = 0;
+                this.angularAcceleration = 0;
+                this.bobRadius = Math.min(7, 4.5 + (length / 220) * 2.8);
+            }
+            
+            update(dt) {
+                this.angularAcceleration = -(G / this.length) * this.angle;
+                this.angularVelocity += this.angularAcceleration * dt;
+                this.angle += this.angularVelocity * dt;
+                this.angularVelocity *= 0.9995;
+                if (this.angle > Math.PI / 2.2) this.angle = Math.PI / 2.2;
+                if (this.angle < -Math.PI / 2.2) this.angle = -Math.PI / 2.2;
+            }
+            
+            getBobPosition() {
+                const bobX = this.x + Math.sin(this.angle) * this.length;
+                const bobY = PIVOT_Y + Math.cos(this.angle) * this.length;
+                return { x: bobX, y: bobY };
+            }
+            
+            draw() {
+                const bob = this.getBobPosition();
+                
+                ctx.beginPath();
+                ctx.moveTo(this.x, PIVOT_Y);
+                ctx.lineTo(bob.x, bob.y);
+                ctx.strokeStyle = `rgba(200, 220, 250, 0.6)`;
+                ctx.lineWidth = 1.4;
+                ctx.shadowBlur = 2;
+                ctx.shadowColor = "rgba(0,0,0,0.3)";
+                ctx.stroke();
+                
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = `${this.color}cc`;
+                
+                const gradient = ctx.createRadialGradient(
+                    bob.x - 2.5, bob.y - 2.5, 2,
+                    bob.x, bob.y, this.bobRadius
+                );
+                gradient.addColorStop(0, this.color);
+                gradient.addColorStop(0.8, this.shadeColor(this.color));
+                ctx.fillStyle = gradient;
+                
+                ctx.beginPath();
+                ctx.arc(bob.x, bob.y, this.bobRadius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(bob.x - 1.5, bob.y - 1.5, this.bobRadius * 0.3, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 245, 0.7)`;
+                ctx.fill();
+            }
+            
+            shadeColor(color) {
+                return `rgba(0,0,0,0.25)`;
+            }
+        }
+        
+        function generateLengths() {
+            const lengths = [];
+            const minLength = 140;
+            const maxLength = 420;
+            const step = (maxLength - minLength) / (PENDULUM_COUNT - 1);
+            for (let i = 0; i < PENDULUM_COUNT; i++) {
+                lengths.push(minLength + i * step);
+            }
+            return lengths;
+        }
+        
+        function initPendulums() {
+            const lengths = generateLengths();
+            pendulums = [];
+            for (let i = 0; i < PENDULUM_COUNT; i++) {
+                const x = START_X + i * SPACING;
+                const color = rainbowColors[i % rainbowColors.length];
+                const pendulum = new Pendulum(x, i, lengths[i], color);
+                pendulums.push(pendulum);
+            }
+        }
+        
+        function drawSupportBar() {
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = "#2a3548";
+            ctx.fillRect(25, PIVOT_Y - 7, LOGICAL_W - 50, 9);
+            ctx.fillStyle = "#4a6078";
+            ctx.fillRect(27, PIVOT_Y - 5, LOGICAL_W - 54, 5);
+            
+            ctx.fillStyle = "#6a85a0";
+            ctx.beginPath();
+            ctx.ellipse(25, PIVOT_Y - 2, 8, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(LOGICAL_W - 25, PIVOT_Y - 2, 8, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            for (let p of pendulums) {
+                ctx.beginPath();
+                ctx.arc(p.x, PIVOT_Y - 1, 3, 0, Math.PI * 2);
+                ctx.fillStyle = "#b8cef0";
+                ctx.fill();
+            }
+        }
+        
+        function drawBackground() {
+            const grad = ctx.createLinearGradient(0, 0, 0, LOGICAL_H);
+            grad.addColorStop(0, '#03050e');
+            grad.addColorStop(0.6, '#010208');
+            grad.addColorStop(1, '#000000');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+            
+            ctx.strokeStyle = "rgba(60, 100, 150, 0.07)";
+            ctx.lineWidth = 0.6;
+            for (let y = 150; y < LOGICAL_H; y += 70) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(LOGICAL_W, y);
+                ctx.stroke();
+            }
+            
+            const glowGrad = ctx.createRadialGradient(LOGICAL_W/2, PIVOT_Y + 140, 50, LOGICAL_W/2, PIVOT_Y + 180, 340);
+            glowGrad.addColorStop(0, "rgba(40, 80, 140, 0.12)");
+            glowGrad.addColorStop(1, "rgba(0,0,0,0)");
+            ctx.fillStyle = glowGrad;
+            ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+        }
+        
+        let timeWave = 0;
+        function drawWaveHint() {
+            if (pendulums.length === 0) return;
+            ctx.beginPath();
+            ctx.globalAlpha = 0.18;
+            for (let i = 0; i <= 120; i++) {
+                let x = i * (LOGICAL_W / 120);
+                let t = (x / LOGICAL_W) * Math.PI * 4.5 + timeWave;
+                let y = PIVOT_Y + 180 + Math.sin(t) * 22;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = "#60a0e0";
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+        }
+        
+        class Sparkle {
+            constructor(x, y, colorRgb) {
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 1.2;
+                this.vy = (Math.random() - 0.5) * 0.8 - 0.6;
+                this.life = 0.65;
+                this.colorRgb = colorRgb;
+                this.size = Math.random() * 1.8 + 0.8;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= 0.022;
+                return this.life > 0;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${this.colorRgb}, ${this.life * 0.65})`;
+                ctx.fill();
+            }
+        }
+        
+        function hexToRgbString(hex) {
+            let shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+            hex = hex.replace(shorthandRegex, function(m, r, g, b) {
+                return r + r + g + g + b + b;
+            });
+            let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : "255,200,100";
+        }
+        
+        function addSparkles() {
+            if (Math.random() < 0.28) {
+                for (let p of pendulums) {
+                    if (Math.random() < 0.22) {
+                        const bob = p.getBobPosition();
+                        const rgb = hexToRgbString(p.color);
+                        sparkles.push(new Sparkle(bob.x + (Math.random() - 0.5) * 9, bob.y + (Math.random() - 0.5) * 8, rgb));
+                    }
+                }
+            }
+            for (let i = 0; i < sparkles.length; i++) {
+                const alive = sparkles[i].update();
+                if (!alive) {
+                    sparkles.splice(i, 1);
+                    i--;
+                }
+            }
+        }
+        
+        function drawSparkles() {
+            for (let s of sparkles) s.draw();
+        }
+        
+        function updatePhysics(dt) {
+            for (let pendulum of pendulums) {
+                pendulum.update(dt);
+            }
+        }
+        
+        function animate(currentTime) {
+            requestAnimationFrame(animate);
+            
+            if (!lastFrameTime) {
+                lastFrameTime = currentTime;
+                return;
+            }
+            
+            let dt = Math.min(0.033, (currentTime - lastFrameTime) / 1000);
+            if (dt < 0.003) {
+                lastFrameTime = currentTime;
+                return;
+            }
+            lastFrameTime = currentTime;
+            
+            timeWave += dt * 2.6;
+            updatePhysics(dt);
+            addSparkles();
+            
+            const scaleX = (viewportW * dpr) / LOGICAL_W;
+            const scaleY = (viewportH * dpr) / LOGICAL_H;
+            ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+            
+            drawBackground();
+            drawSupportBar();
+            drawWaveHint();
+            for (let p of pendulums) p.draw();
+            drawSparkles();
+            
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = "rgba(25, 45, 70, 0.04)";
+            ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.shadowBlur = 0;
+        }
+        
+        function handleResize() {
+            dpr = window.devicePixelRatio || 1;
+            resizeCanvas();
+        }
+        
+        window.addEventListener('resize', () => {
+            handleResize();
+        });
+        
+        initPendulums();
+        handleResize();
+        requestAnimationFrame(animate);
+    })();
+</script>
+</body>
+</html>

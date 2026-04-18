@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Rocket Launch - Claude</title>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}body{display:flex;align-items:center;justify-content:center}canvas{display:block;background:#000}</style>
+</head>
+<body><canvas id="c"></canvas><script>
+(()=>{const W=540,H=960,c=document.getElementById("c"),x=c.getContext("2d"),TA=Math.PI*2,r=(a,b)=>a+Math.random()*(b-a);let d=1,s=1;
+function resize(){const vw=innerWidth,vh=innerHeight;s=Math.min(vw/W,vh/H);const cw=W*s,ch=H*s;d=Math.max(1,Math.min(3,devicePixelRatio||1));c.style.width=cw+"px";c.style.height=ch+"px";c.width=cw*d;c.height=ch*d;x.setTransform(d*s,0,0,d*s,0,0)}addEventListener("resize",resize,{passive:true});resize();
+let frame=0,phase="countdown",count=5,timer=60,alt=0,vy=0,rocketY=720,sep=false,msg=0;
+const stars=Array.from({length:180},()=>({x:r(0,W),y:r(0,H),a:r(.2,1),s:r(.6,2)}));const smoke=[];const sparks=[];const boosters=[{x:-22,y:35,a:true,vx:0,vy:0},{x:22,y:35,a:true,vx:0,vy:0}];
+function emit(){for(let i=0;i<4;i++)smoke.push({x:W/2+r(-40,40),y:rocketY+68+r(-8,8),vx:r(-2,2),vy:r(.6,2.4),r:r(10,26),l:r(28,80)});for(let i=0;i<3;i++)sparks.push({x:W/2+r(-12,12),y:rocketY+66,vx:r(-2.2,2.2),vy:r(2,8),s:r(2,4),l:r(16,34)});}
+function update(){frame++;
+ if(phase==="countdown"){timer--;if(timer<=0){count--;timer=60;if(count<0){phase="liftoff";msg=100;}}if(count<=2)emit();}
+ else if(phase==="liftoff"||phase==="ascent"){vy=Math.min(vy+(phase==="liftoff"?0.045:0.02),6);rocketY-=vy;alt=Math.min(1,(720-rocketY)/1600);emit();if(alt>.35)phase="ascent";if(alt>.62&&!sep){sep=true;boosters[0].a=boosters[1].a=false;boosters[0].vx=-2;boosters[1].vx=2;boosters[0].vy=1;boosters[1].vy=1;msg=80;}if(alt>=1){phase="space";msg=120;}}
+ else if(phase==="space"){rocketY-=3;if(frame%280===0){phase="reset";}}
+ else if(phase==="reset"){if(frame%70===0){phase="countdown";count=5;timer=60;alt=0;vy=0;rocketY=720;sep=false;boosters[0].x=-22;boosters[1].x=22;boosters[0].y=boosters[1].y=35;boosters[0].a=boosters[1].a=true;smoke.length=0;sparks.length=0;}}
+ for(const b of boosters){if(!b.a){b.x+=b.vx;b.y+=b.vy;b.vy+=0.08;}}
+ for(let i=smoke.length-1;i>=0;i--){const p=smoke[i];p.x+=p.vx;p.y+=p.vy;p.r+=0.2;p.l--;if(p.l<=0)smoke.splice(i,1);}
+ for(let i=sparks.length-1;i>=0;i--){const p=sparks[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.08;p.l--;if(p.l<=0)sparks.splice(i,1);}
+ if(msg>0)msg--;
+}
+function draw(){const g=x.createLinearGradient(0,0,0,H),a=alt;g.addColorStop(0,`rgb(${Math.floor(18*(1-a))},${Math.floor(110*(1-a))},${Math.floor(240*(1-a)+18*a)})`);g.addColorStop(.6,`rgb(${Math.floor(70*(1-a))},${Math.floor(90*(1-a))},${Math.floor(160*(1-a))})`);g.addColorStop(1,"#000");x.fillStyle=g;x.fillRect(0,0,W,H);
+ if(a>.2){for(const s of stars){x.globalAlpha=(a-.2)*1.3*s.a;x.fillStyle="#fff";x.fillRect(s.x,s.y,s.s,s.s);}x.globalAlpha=1;}
+ if(a<.4){x.fillStyle="#111";x.fillRect(0,790,W,170);x.fillStyle="#222";x.fillRect(140,735,260,55);}
+ for(const p of smoke){x.globalAlpha=p.l/80;const gg=x.createRadialGradient(p.x,p.y,p.r*.1,p.x,p.y,p.r);gg.addColorStop(0,"rgba(210,210,210,.28)");gg.addColorStop(1,"rgba(70,70,70,0)");x.fillStyle=gg;x.beginPath();x.arc(p.x,p.y,p.r,0,TA);x.fill();}x.globalAlpha=1;
+ for(const p of sparks){x.globalAlpha=p.l/34;x.fillStyle="#ffba20";x.fillRect(p.x,p.y,p.s,p.s*2);}x.globalAlpha=1;
+ for(const b of boosters){if(b.a||b.y<1000){x.fillStyle="#d8d8d8";x.fillRect(W/2+b.x-10,rocketY+b.y-24,20,52);}}
+ if(rocketY>-200){if(phase!=="countdown"){const flame=26+Math.sin(frame*.6)*8+Math.min(1,a)*18,lg=x.createLinearGradient(0,rocketY+54,0,rocketY+90+flame);lg.addColorStop(0,"#fff7a0");lg.addColorStop(.35,"#ffb000");lg.addColorStop(1,"rgba(255,60,0,0)");x.fillStyle=lg;x.beginPath();x.moveTo(W/2-12,rocketY+54);x.quadraticCurveTo(W/2,rocketY+85+flame,W/2+12,rocketY+54);x.fill();}
+ x.fillStyle="#f0f0f0";x.fillRect(W/2-16,rocketY-34,32,88);x.fillStyle="#e44";x.beginPath();x.moveTo(W/2-16,rocketY-34);x.lineTo(W/2,rocketY-58);x.lineTo(W/2+16,rocketY-34);x.fill();x.fillStyle="#3b74ff";x.fillRect(W/2-7,rocketY-8,14,18);}
+ if(phase==="countdown"){x.fillStyle="#fff";x.font="bold 74px Arial";x.textAlign="center";x.fillText(count>0?count:"0",W/2,180);x.font="22px Arial";x.fillStyle="#8cf";x.fillText("COUNTDOWN",W/2,220);x.textAlign="start";}
+ if(msg>0&&phase!=="countdown"){x.fillStyle="#ffd54a";x.font="bold 36px Arial";x.textAlign="center";x.fillText(sep?"BOOSTER SEP":"LIFTOFF",W/2,160);x.textAlign="start";}
+}
+function loop(){update();draw();requestAnimationFrame(loop)}loop();
+})();
+</script></body></html>

@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Miniature Solar System | 400x400 Canvas</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000000;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            font-family: system-ui, 'Segoe UI', monospace;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            border-radius: 0px;
+            background: #000000;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="solarCanvas" width="400" height="400"></canvas>
+
+    <script>
+        (function() {
+            // ------------------- FIXED 400x400 CANVAS -------------------
+            const canvas = document.getElementById('solarCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // Dimensions fixed
+            const WIDTH = 400;
+            const HEIGHT = 400;
+            let dpr = 1;
+            let viewW = 0;
+            let viewH = 0;
+
+            function resize() {
+                dpr = Math.max(1, window.devicePixelRatio || 1);
+                viewW = window.innerWidth;
+                viewH = window.innerHeight;
+                canvas.width = Math.max(1, Math.floor(viewW * dpr));
+                canvas.height = Math.max(1, Math.floor(viewH * dpr));
+            }
+            resize();
+            window.addEventListener('resize', resize);
+
+            // Center of the solar system
+            const centerX = WIDTH / 2;   // 200
+            const centerY = HEIGHT / 2;  // 200
+
+            // ------------------- PLANET DATA -------------------
+            // Each planet: radius (visual size in px), distance from sun (px), speed (radians per frame), color
+            // Distances and sizes adjusted to fit beautifully inside 400x400 (max distance ~155px from center)
+            const planetsData = [
+                { name: "Mercury", radius: 3.2, distance: 48,  speed: 0.024, color: "#d6b575" }, // golden-brown
+                { name: "Venus",   radius: 4.0, distance: 68,  speed: 0.0175, color: "#e8b56e" }, // pale gold
+                { name: "Earth",   radius: 4.3, distance: 88,  speed: 0.0145, color: "#4c9fcf" }, // blue
+                { name: "Mars",    radius: 3.8, distance: 108, speed: 0.0122, color: "#c46b3e" }, // rusty red
+                { name: "Jupiter", radius: 7.2, distance: 136, speed: 0.0078, color: "#d8a27a" }, // tan
+                { name: "Saturn",  radius: 6.5, distance: 164, speed: 0.0062, color: "#e8cf9a" }, // light gold
+                { name: "Uranus",  radius: 5.2, distance: 192, speed: 0.0051, color: "#b0e0e6" }, // ice cyan
+                { name: "Neptune", radius: 5.0, distance: 218, speed: 0.0043, color: "#3b67b5" }  // deep blue
+            ];
+
+            // Orbital angles for each planet (radians) - randomized start positions
+            let planetAngles = planetsData.map(() => Math.random() * Math.PI * 2);
+
+            // Saturn ring rotation angle
+            let saturnRingAngle = 0;
+
+            // ------------------- STARS: twinkling background -------------------
+            const STAR_COUNT = 220;
+            let stars = [];
+
+            function initStars() {
+                stars = [];
+                for (let i = 0; i < STAR_COUNT; i++) {
+                    stars.push({
+                        x: Math.random() * WIDTH,
+                        y: Math.random() * HEIGHT,
+                        radius: 0.8 + Math.random() * 1.8,
+                        baseAlpha: 0.3 + Math.random() * 0.6,
+                        twinkleSpeed: 0.5 + Math.random() * 2.2,
+                        phase: Math.random() * Math.PI * 2
+                    });
+                }
+            }
+
+            // ------------------- SUN GLOW & PULSATION -------------------
+            let sunPulse = 0;
+            let pulseDirection = 0.004;
+
+            // ------------------- ANIMATION LOOP VARIABLES -------------------
+            let time = 0;
+            let animationId = null;
+
+            // Helper: draw a planet with optional ring (Saturn)
+            function drawPlanet(x, y, radius, color, hasRing = false, ringAngle = 0) {
+                ctx.save();
+                ctx.shadowBlur = 3;
+                ctx.shadowColor = "rgba(0,0,0,0.4)";
+                // Planet body
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+
+                // Soft highlight (sun-facing side)
+                ctx.beginPath();
+                ctx.arc(x - radius * 0.2, y - radius * 0.2, radius * 0.28, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 245, 210, 0.35)';
+                ctx.fill();
+
+                // Saturn's ring (elegant, slightly tilted)
+                if (hasRing) {
+                    ctx.beginPath();
+                    ctx.ellipse(x, y, radius * 1.55, radius * 0.55, ringAngle, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(210, 180, 110, 0.85)';
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.ellipse(x, y, radius * 1.35, radius * 0.4, ringAngle + 0.15, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(240, 210, 130, 0.95)';
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.ellipse(x, y, radius * 1.7, radius * 0.32, ringAngle - 0.1, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(170, 135, 75, 0.6)';
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            // Draw orbits (faint circles)
+            function drawOrbits() {
+                ctx.save();
+                ctx.globalAlpha = 0.28;
+                ctx.strokeStyle = '#6c8fbb';
+                ctx.lineWidth = 0.7;
+                for (let i = 0; i < planetsData.length; i++) {
+                    let dist = planetsData[i].distance;
+                    ctx.beginPath();
+                    ctx.ellipse(centerX, centerY, dist, dist, 0, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                // extra faint outer ring
+                ctx.globalAlpha = 0.12;
+                ctx.beginPath();
+                ctx.ellipse(centerX, centerY, 232, 232, 0, 0, Math.PI * 2);
+                ctx.strokeStyle = '#aac9ff';
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Draw glowing sun with radial gradient and pulsation
+            function drawSun() {
+                // pulsation effect
+                sunPulse += pulseDirection;
+                if (sunPulse > 0.12) { sunPulse = 0.12; pulseDirection = -0.004; }
+                if (sunPulse < -0.05) { sunPulse = -0.05; pulseDirection = 0.004; }
+                const glowIntensity = 0.85 + sunPulse * 0.4;
+
+                const sunRadius = 16;   // fixed px radius for sun (looks great at 400x400)
+                const glowRadius = sunRadius * 1.9;
+
+                // Outer glow (multiple layers)
+                ctx.save();
+                ctx.shadowBlur = 0;
+                let gradOuter = ctx.createRadialGradient(centerX, centerY, sunRadius * 0.4, centerX, centerY, glowRadius);
+                gradOuter.addColorStop(0, `rgba(255, 190, 70, ${0.45 * glowIntensity})`);
+                gradOuter.addColorStop(0.55, `rgba(255, 90, 30, 0.22)`);
+                gradOuter.addColorStop(1, 'rgba(255, 50, 0, 0)');
+                ctx.fillStyle = gradOuter;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, glowRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Sun core radial gradient
+                let gradCore = ctx.createRadialGradient(centerX - 2, centerY - 2, 3, centerX, centerY, sunRadius);
+                gradCore.addColorStop(0, '#fff8e0');
+                gradCore.addColorStop(0.25, '#ffea9e');
+                gradCore.addColorStop(0.6, '#ffaa44');
+                gradCore.addColorStop(1, '#dd6622');
+                ctx.fillStyle = gradCore;
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, sunRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Bright inner highlight
+                ctx.beginPath();
+                ctx.arc(centerX - 2, centerY - 2, sunRadius * 0.32, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 220, 0.85)';
+                ctx.fill();
+
+                // Dynamic coronal flares (tiny arcs)
+                ctx.globalCompositeOperation = 'lighter';
+                for (let i = 0; i < 14; i++) {
+                    let angle = Date.now() * 0.004 + i * 0.8;
+                    let flareRad = sunRadius + 3 + Math.sin(angle * 4) * 2.5;
+                    let xOff = Math.cos(angle) * flareRad;
+                    let yOff = Math.sin(angle) * flareRad;
+                    ctx.beginPath();
+                    ctx.arc(centerX + xOff, centerY + yOff, 1.2 + Math.sin(angle * 3) * 0.7, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 200, 100, 0.6)`;
+                    ctx.fill();
+                }
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.restore();
+            }
+
+            // Draw twinkling stars (dynamic alpha)
+            let starTime = 0;
+            function drawStars() {
+                starTime += 0.022;
+                for (let s of stars) {
+                    let twinkle = 0.5 + 0.5 * Math.sin(starTime * s.twinkleSpeed + s.phase);
+                    let alpha = s.baseAlpha * (0.45 + twinkle * 0.55);
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 245, 210, ${alpha})`;
+                    ctx.fill();
+                    // occasional extra sparkle for brighter stars
+                    if (twinkle > 0.85 && s.radius > 1.2) {
+                        ctx.beginPath();
+                        ctx.arc(s.x, s.y, s.radius * 1.4, 0, Math.PI * 2);
+                        ctx.fillStyle = `rgba(255, 255, 210, 0.3)`;
+                        ctx.fill();
+                    }
+                }
+            }
+
+            // Draw tiny floating dust motes (zodiacal light effect)
+            let dustParticles = [];
+            const DUST_COUNT = 110;
+            function initDust() {
+                dustParticles = [];
+                for (let i = 0; i < DUST_COUNT; i++) {
+                    dustParticles.push({
+                        angle: Math.random() * Math.PI * 2,
+                        radius: 35 + Math.random() * 210,
+                        size: 0.6 + Math.random() * 1.6,
+                        speed: 0.0012 + Math.random() * 0.004,
+                        alpha: 0.15 + Math.random() * 0.35
+                    });
+                }
+            }
+
+            function drawDust() {
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                for (let d of dustParticles) {
+                    let x = centerX + Math.cos(d.angle) * d.radius;
+                    let y = centerY + Math.sin(d.angle) * d.radius;
+                    ctx.beginPath();
+                    ctx.arc(x, y, d.size * 0.7, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 210, 130, ${d.alpha * 0.4})`;
+                    ctx.fill();
+                    d.angle += d.speed;
+                    if (d.angle > Math.PI * 2) d.angle -= Math.PI * 2;
+                }
+                ctx.restore();
+            }
+
+            // Update planet angles
+            function updateOrbits() {
+                for (let i = 0; i < planetsData.length; i++) {
+                    planetAngles[i] += planetsData[i].speed;
+                    if (planetAngles[i] > Math.PI * 2) planetAngles[i] -= Math.PI * 2;
+                }
+                saturnRingAngle += 0.009;
+            }
+
+            // Draw subtle light rays emanating from sun
+            function drawSunRays() {
+                ctx.save();
+                ctx.globalCompositeOperation = 'screen';
+                let rayTime = Date.now() * 0.003;
+                for (let i = 0; i < 12; i++) {
+                    let angle = rayTime + i * (Math.PI * 2 / 12);
+                    let rayLen = 42;
+                    let startX = centerX + Math.cos(angle) * 18;
+                    let startY = centerY + Math.sin(angle) * 18;
+                    let endX = centerX + Math.cos(angle) * rayLen;
+                    let endY = centerY + Math.sin(angle) * rayLen;
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(endX, endY);
+                    ctx.lineWidth = 1.5 + Math.sin(angle * 4) * 1.2;
+                    ctx.strokeStyle = `rgba(255, 190, 90, 0.22)`;
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            // Main rendering function
+            function draw() {
+                if (!ctx) return;
+                const sx = viewW / WIDTH;
+                const sy = viewH / HEIGHT;
+                ctx.setTransform(sx * dpr, 0, 0, sy * dpr, 0, 0);
+
+                // 1. Deep space background (pure black with slight radial depth)
+                let bgGrad = ctx.createRadialGradient(centerX - 15, centerY - 15, 20, centerX, centerY, 210);
+                bgGrad.addColorStop(0, '#04000c');
+                bgGrad.addColorStop(0.7, '#010003');
+                bgGrad.addColorStop(1, '#000000');
+                ctx.fillStyle = bgGrad;
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+                // 2. Twinkling stars (background)
+                drawStars();
+
+                // 3. Faint orbits
+                drawOrbits();
+
+                // 4. Dust particles (zodiacal)
+                drawDust();
+
+                // 5. Sun rays (behind planets but above dust)
+                drawSunRays();
+
+                // 6. Draw all planets (from Mercury to Neptune)
+                for (let i = 0; i < planetsData.length; i++) {
+                    const p = planetsData[i];
+                    const angle = planetAngles[i];
+                    const x = centerX + Math.cos(angle) * p.distance;
+                    const y = centerY + Math.sin(angle) * p.distance;
+                    const hasRing = (p.name === "Saturn");
+                    drawPlanet(x, y, p.radius, p.color, hasRing, saturnRingAngle);
+                }
+
+                // 7. Draw Sun (on top for central dominance, but planets overlap gracefully)
+                drawSun();
+
+                // 8. Additional subtle reflection highlights on planets (sun-facing side glow)
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                for (let i = 0; i < planetsData.length; i++) {
+                    const p = planetsData[i];
+                    const angle = planetAngles[i];
+                    const x = centerX + Math.cos(angle) * p.distance;
+                    const y = centerY + Math.sin(angle) * p.distance;
+                    const radiusScaled = p.radius;
+                    // tiny sun-facing glint
+                    const dirX = Math.cos(angle);
+                    const dirY = Math.sin(angle);
+                    const highlightX = x - dirX * radiusScaled * 0.5;
+                    const highlightY = y - dirY * radiusScaled * 0.5;
+                    ctx.beginPath();
+                    ctx.arc(highlightX, highlightY, radiusScaled * 0.2, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(255, 240, 180, 0.4)';
+                    ctx.fill();
+                }
+                ctx.restore();
+
+                // 9. Final central starburst glint (tiny)
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 225, 120, 0.5)';
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, 2.2, 0, Math.PI * 2);
+                ctx.fillStyle = '#fffae6';
+                ctx.fill();
+            }
+
+            // ------------------- ANIMATION LOOP -------------------
+            function animate() {
+                updateOrbits();
+                draw();
+                requestAnimationFrame(animate);
+            }
+
+            // ------------------- INITIALIZATION -------------------
+            function init() {
+                initStars();
+                initDust();
+                // randomize starting angles for variety
+                for (let i = 0; i < planetAngles.length; i++) {
+                    planetAngles[i] = Math.random() * Math.PI * 2;
+                }
+                animate();
+            }
+
+            init();
+        })();
+    </script>
+</body>
+</html>

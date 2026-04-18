@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Matrix Digital Rain</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: #000; width: 100vw; height: 100vh; overflow: hidden; }
+body { display: flex; justify-content: center; align-items: center; }
+canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let vpw = window.innerWidth, vph = window.innerHeight, dpr = 1;
+function syncViewport() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  vpw = window.innerWidth;
+  vph = window.innerHeight;
+  canvas.width = Math.max(1, Math.floor(vpw * dpr));
+  canvas.height = Math.max(1, Math.floor(vph * dpr));
+}
+syncViewport();
+window.addEventListener('resize', syncViewport);
+
+const W = 540, H = 960;
+
+const CHAR_SIZE = 16;
+const COLS = Math.ceil(W / CHAR_SIZE);
+const MAX_ROWS = Math.ceil(H / CHAR_SIZE) + 5;
+
+const CHARS = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%&*+=<>?/\\|{}[]~^';
+
+function randChar() {
+  return CHARS[Math.floor(Math.random() * CHARS.length)];
+}
+
+class Stream {
+  constructor(col) {
+    this.col = col;
+    this.x = col * CHAR_SIZE;
+    this.reset();
+  }
+
+  reset() {
+    this.speed = 1.5 + Math.random() * 4.5;
+    this.length = 8 + Math.floor(Math.random() * 28);
+    this.y = -Math.random() * H * 1.5;
+    this.glitchRate = 0.02 + Math.random() * 0.06;
+    this.brightness = 0.6 + Math.random() * 0.4;
+    this.headGlow = Math.random() > 0.3;
+    this.charSize = CHAR_SIZE + (Math.random() - 0.5) * 2;
+
+    this.chars = [];
+    for (let i = 0; i < this.length + 5; i++) {
+      this.chars.push(randChar());
+    }
+  }
+
+  update(dt) {
+    this.y += this.speed * dt * 60;
+
+    for (let i = 0; i < this.chars.length; i++) {
+      if (Math.random() < this.glitchRate) {
+        this.chars[i] = randChar();
+      }
+    }
+
+    if (this.y - this.length * CHAR_SIZE > H + 50) {
+      this.reset();
+      this.y = -this.length * CHAR_SIZE - Math.random() * 200;
+    }
+  }
+
+  draw() {
+    const headRow = Math.floor(this.y / CHAR_SIZE);
+
+    for (let i = 0; i < this.length; i++) {
+      const rowY = (headRow - i) * CHAR_SIZE;
+
+      if (rowY < -CHAR_SIZE || rowY > H + CHAR_SIZE) continue;
+
+      const charIdx = i % this.chars.length;
+      const t = i / this.length;
+      const subPixelY = this.y % CHAR_SIZE;
+      const drawY = rowY + subPixelY;
+
+      if (drawY < -CHAR_SIZE || drawY > H + CHAR_SIZE) continue;
+
+      let r, g, b, alpha;
+
+      if (i === 0) {
+        r = 200; g = 255; b = 220;
+        alpha = this.brightness;
+        if (this.headGlow) {
+          ctx.shadowColor = 'rgba(100,255,140,0.8)';
+          ctx.shadowBlur = 15;
+        }
+      } else if (i === 1) {
+        r = 80; g = 255; b = 100;
+        alpha = this.brightness * 0.95;
+      } else if (i <= 3) {
+        r = 30; g = 240; b = 60;
+        alpha = this.brightness * (0.9 - t * 0.2);
+      } else {
+        const fade = 1 - Math.pow(t, 1.5);
+        r = 0;
+        g = Math.floor(140 + 80 * (1 - t));
+        b = Math.floor(20 + 20 * (1 - t));
+        alpha = this.brightness * fade * 0.85;
+      }
+
+      if (alpha <= 0.01) continue;
+
+      ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+      ctx.font = `${this.charSize}px "MS Gothic", "Courier New", monospace`;
+      ctx.fillText(this.chars[charIdx], this.x + 1, drawY);
+
+      if (i === 0 && this.headGlow) {
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
+}
+
+class BGStream {
+  constructor(col) {
+    this.x = col * CHAR_SIZE + (Math.random() - 0.5) * 6;
+    this.reset();
+  }
+
+  reset() {
+    this.speed = 0.5 + Math.random() * 2;
+    this.length = 5 + Math.floor(Math.random() * 15);
+    this.y = -Math.random() * H * 2;
+    this.glitchRate = 0.01 + Math.random() * 0.03;
+    this.alpha = 0.08 + Math.random() * 0.12;
+    this.chars = [];
+    for (let i = 0; i < this.length + 3; i++) {
+      this.chars.push(randChar());
+    }
+  }
+
+  update(dt) {
+    this.y += this.speed * dt * 60;
+    for (let i = 0; i < this.chars.length; i++) {
+      if (Math.random() < this.glitchRate) this.chars[i] = randChar();
+    }
+    if (this.y - this.length * CHAR_SIZE > H + 30) {
+      this.reset();
+      this.y = -this.length * CHAR_SIZE - Math.random() * 300;
+    }
+  }
+
+  draw() {
+    const headRow = Math.floor(this.y / CHAR_SIZE);
+    for (let i = 0; i < this.length; i++) {
+      const drawY = (headRow - i) * CHAR_SIZE + (this.y % CHAR_SIZE);
+      if (drawY < -CHAR_SIZE || drawY > H + CHAR_SIZE) continue;
+      const t = i / this.length;
+      const fade = 1 - t * t;
+      ctx.fillStyle = `rgba(0,${80 + Math.floor(40 * (1-t))},${10},${this.alpha * fade})`;
+      ctx.font = `${CHAR_SIZE - 2}px "MS Gothic", "Courier New", monospace`;
+      ctx.fillText(this.chars[i % this.chars.length], this.x, drawY);
+    }
+  }
+}
+
+const streams = [];
+const bgStreams = [];
+
+for (let col = 0; col < COLS; col++) {
+  const count = 1 + Math.floor(Math.random() * 2);
+  for (let n = 0; n < count; n++) {
+    const s = new Stream(col);
+    s.y -= n * H * 0.5 + Math.random() * H * 0.5;
+    streams.push(s);
+  }
+}
+
+for (let col = 0; col < COLS; col++) {
+  if (Math.random() > 0.4) {
+    const s = new BGStream(col);
+    s.y -= Math.random() * H;
+    bgStreams.push(s);
+  }
+}
+
+const flickerSpots = [];
+for (let i = 0; i < 15; i++) {
+  flickerSpots.push({
+    x: Math.floor(Math.random() * COLS) * CHAR_SIZE,
+    y: Math.random() * H,
+    char: randChar(),
+    timer: Math.random() * 3,
+    duration: 0.05 + Math.random() * 0.15,
+    interval: 1 + Math.random() * 4
+  });
+}
+
+let lastTime = 0;
+
+function render(timestamp) {
+  if (!lastTime) lastTime = timestamp;
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+
+  ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.fillRect(0, 0, W, H);
+
+  if (Math.random() < 0.016) {
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  for (let s of bgStreams) {
+    s.update(dt);
+    s.draw();
+  }
+
+  for (let s of streams) {
+    s.update(dt);
+    s.draw();
+  }
+
+  for (let f of flickerSpots) {
+    f.timer -= dt;
+    if (f.timer <= 0) {
+      f.char = randChar();
+      f.x = Math.floor(Math.random() * COLS) * CHAR_SIZE;
+      f.y = Math.floor(Math.random() * MAX_ROWS) * CHAR_SIZE;
+      f.timer = f.interval;
+
+      ctx.shadowColor = 'rgba(100,255,140,0.9)';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = 'rgba(180,255,200,0.9)';
+      ctx.font = `${CHAR_SIZE}px "MS Gothic", "Courier New", monospace`;
+      ctx.fillText(f.char, f.x + 1, f.y);
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  ctx.fillStyle = 'rgba(0,0,0,0.03)';
+  for (let y = 0; y < H; y += 3) {
+    ctx.fillRect(0, y, W, 1);
+  }
+
+  const bottomGlow = ctx.createLinearGradient(0, H - 100, 0, H);
+  bottomGlow.addColorStop(0, 'rgba(0,30,0,0)');
+  bottomGlow.addColorStop(1, 'rgba(0,20,0,0.15)');
+  ctx.fillStyle = bottomGlow;
+  ctx.fillRect(0, H - 100, W, 100);
+
+  requestAnimationFrame(render);
+}
+
+syncViewport();
+ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+ctx.fillStyle = '#000';
+ctx.fillRect(0, 0, W, H);
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

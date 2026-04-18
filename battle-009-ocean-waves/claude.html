@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ocean Waves</title>
+<style>
+  * { margin: 0; padding: 0; }
+  body { background: #000; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; width: 100vw; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const W = 400;
+const H = 400;
+const HORIZON = H * 0.38;
+let vpw = Math.max(1, window.innerWidth), vph = Math.max(1, window.innerHeight), dpr = 1;
+function syncViewport() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  vpw = Math.max(1, window.innerWidth);
+  vph = Math.max(1, window.innerHeight);
+  canvas.width = Math.floor(vpw * dpr);
+  canvas.height = Math.floor(vph * dpr);
+}
+function beginFrame() {
+  syncViewport();
+  ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+}
+
+const waveLayers = [
+  { y: H * 0.95, amplitude: 12, frequency: 0.008, speed: 0.012, color1: 'rgba(8,22,50,0.95)',   color2: 'rgba(5,15,40,0.98)',   foamAlpha: 0.0, height: 60 },
+  { y: H * 0.85, amplitude: 14, frequency: 0.010, speed: 0.015, color1: 'rgba(10,35,75,0.92)',  color2: 'rgba(8,25,55,0.95)',   foamAlpha: 0.15, height: 70 },
+  { y: H * 0.75, amplitude: 16, frequency: 0.012, speed: 0.018, color1: 'rgba(15,50,100,0.88)', color2: 'rgba(10,38,78,0.92)',  foamAlpha: 0.3, height: 80 },
+  { y: H * 0.65, amplitude: 13, frequency: 0.014, speed: 0.022, color1: 'rgba(20,65,120,0.85)', color2: 'rgba(15,50,95,0.9)',   foamAlpha: 0.45, height: 85 },
+  { y: H * 0.56, amplitude: 10, frequency: 0.016, speed: 0.026, color1: 'rgba(30,85,145,0.8)',  color2: 'rgba(22,68,118,0.85)', foamAlpha: 0.55, height: 90 },
+  { y: H * 0.48, amplitude: 8,  frequency: 0.018, speed: 0.03,  color1: 'rgba(45,110,165,0.75)',color2: 'rgba(35,90,148,0.8)',  foamAlpha: 0.4, height: 95 },
+  { y: H * 0.42, amplitude: 5,  frequency: 0.02,  speed: 0.035, color1: 'rgba(60,130,180,0.65)',color2: 'rgba(50,115,168,0.7)', foamAlpha: 0.25, height: 100 },
+];
+
+class FoamParticle {
+  constructor() { this.reset(); }
+  reset() {
+    this.layerIdx = Math.floor(Math.random() * waveLayers.length);
+    this.xOffset = Math.random() * W;
+    this.size = 1 + Math.random() * 2.5;
+    this.alpha = 0.3 + Math.random() * 0.5;
+    this.life = 0;
+    this.maxLife = 60 + Math.random() * 120;
+    this.drift = (Math.random() - 0.5) * 0.3;
+  }
+  update() {
+    this.life++;
+    this.xOffset += this.drift;
+    if (this.life > this.maxLife) this.reset();
+  }
+}
+
+const foamParticles = Array.from({ length: 150 }, () => {
+  const p = new FoamParticle();
+  p.life = Math.random() * p.maxLife;
+  return p;
+});
+
+let time = 0;
+
+function getWaveY(baseY, amplitude, frequency, speed, x) {
+  return baseY +
+    Math.sin(x * frequency + time * speed * 60) * amplitude +
+    Math.sin(x * frequency * 1.8 + time * speed * 40 + 1.3) * amplitude * 0.5 +
+    Math.sin(x * frequency * 3.2 + time * speed * 80 + 2.7) * amplitude * 0.2;
+}
+
+function drawSky() {
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, HORIZON + 20);
+  skyGrad.addColorStop(0, '#0a0e2a');
+  skyGrad.addColorStop(0.25, '#121845');
+  skyGrad.addColorStop(0.45, '#2a1a4a');
+  skyGrad.addColorStop(0.6, '#6b2c50');
+  skyGrad.addColorStop(0.75, '#c4524a');
+  skyGrad.addColorStop(0.88, '#e89040');
+  skyGrad.addColorStop(1, '#f0c060');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, HORIZON + 20);
+
+  const sunX = W * 0.55;
+  const sunY = HORIZON - 10;
+  const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 60);
+  sunGrad.addColorStop(0, 'rgba(255, 230, 180, 0.9)');
+  sunGrad.addColorStop(0.2, 'rgba(255, 200, 120, 0.6)');
+  sunGrad.addColorStop(0.5, 'rgba(255, 160, 80, 0.2)');
+  sunGrad.addColorStop(1, 'rgba(255, 100, 50, 0)');
+  ctx.fillStyle = sunGrad;
+  ctx.fillRect(0, 0, W, HORIZON + 20);
+
+  const coreGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 22);
+  coreGrad.addColorStop(0, 'rgba(255, 250, 230, 1)');
+  coreGrad.addColorStop(0.5, 'rgba(255, 220, 150, 0.8)');
+  coreGrad.addColorStop(1, 'rgba(255, 180, 80, 0)');
+  ctx.beginPath();
+  ctx.arc(sunX, sunY, 22, 0, Math.PI * 2);
+  ctx.fillStyle = coreGrad;
+  ctx.fill();
+
+  const starPositions = [
+    [30, 25], [85, 50], [150, 15], [220, 40], [310, 20], [370, 55],
+    [55, 70], [180, 65], [260, 30], [340, 45], [130, 48], [390, 18]
+  ];
+  for (const [sx, sy] of starPositions) {
+    const twinkle = 0.3 + 0.7 * Math.abs(Math.sin(time * 0.02 + sx * 0.1));
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.8, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${twinkle * 0.6})`;
+    ctx.fill();
+  }
+}
+
+function drawSunReflection() {
+  const sunX = W * 0.55;
+  for (let i = 0; i < 40; i++) {
+    const rx = sunX + (Math.random() - 0.5) * 80;
+    const ry = HORIZON + 10 + Math.random() * (H - HORIZON - 10);
+    const shimmer = Math.sin(time * 0.05 + rx * 0.05 + ry * 0.03);
+    if (shimmer > 0.2) {
+      const sw = 2 + Math.random() * 6;
+      const sh = 1 + Math.random() * 1.5;
+      const sa = shimmer * 0.15 * (1 - (ry - HORIZON) / (H - HORIZON));
+      ctx.fillStyle = `rgba(255, 210, 130, ${sa})`;
+      ctx.fillRect(rx - sw / 2, ry, sw, sh);
+    }
+  }
+}
+
+function drawWaveLayer(layer) {
+  const { y, amplitude, frequency, speed, color1, color2, foamAlpha, height } = layer;
+
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+
+  for (let x = 0; x <= W; x += 2) {
+    const wy = getWaveY(y, amplitude, frequency, speed, x);
+    if (x === 0) ctx.moveTo(x, wy);
+    else ctx.lineTo(x, wy);
+  }
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+
+  const waveGrad = ctx.createLinearGradient(0, y - amplitude, 0, y + height);
+  waveGrad.addColorStop(0, color1);
+  waveGrad.addColorStop(1, color2);
+  ctx.fillStyle = waveGrad;
+  ctx.fill();
+
+  if (foamAlpha > 0) {
+    for (let x = 0; x <= W; x += 1) {
+      const wy = getWaveY(y, amplitude, frequency, speed, x);
+      const prevWy = getWaveY(y, amplitude, frequency, speed, x - 4);
+      const nextWy = getWaveY(y, amplitude, frequency, speed, x + 4);
+
+      if (wy < prevWy && wy < nextWy) {
+        const foamWidth = 8 + Math.sin(x * 0.3 + time * 0.03) * 4;
+        const foamGrad = ctx.createLinearGradient(x, wy - 2, x, wy + 4);
+        const fa = foamAlpha * (0.6 + 0.4 * Math.sin(time * 0.04 + x * 0.1));
+        foamGrad.addColorStop(0, `rgba(255, 255, 255, ${fa})`);
+        foamGrad.addColorStop(1, `rgba(200, 220, 255, 0)`);
+        ctx.fillStyle = foamGrad;
+        ctx.fillRect(x - foamWidth / 2, wy - 1.5, foamWidth, 4);
+      }
+    }
+
+    ctx.beginPath();
+    ctx.lineWidth = 1.2;
+    for (let x = 0; x <= W; x += 2) {
+      const wy = getWaveY(y, amplitude, frequency, speed, x);
+      const foamOffset = Math.sin(x * 0.15 + time * 0.05) * 1.5;
+      if (x === 0) ctx.moveTo(x, wy + foamOffset);
+      else ctx.lineTo(x, wy + foamOffset);
+    }
+    const lineAlpha = foamAlpha * 0.5;
+    ctx.strokeStyle = `rgba(255, 255, 255, ${lineAlpha})`;
+    ctx.stroke();
+  }
+}
+
+function drawFoamParticles() {
+  for (const p of foamParticles) {
+    p.update();
+    const layer = waveLayers[p.layerIdx];
+    if (!layer) continue;
+    const wy = getWaveY(layer.y, layer.amplitude, layer.frequency, layer.speed, p.xOffset);
+    const lifeRatio = p.life / p.maxLife;
+    const fadeIn = Math.min(1, lifeRatio * 5);
+    const fadeOut = Math.max(0, 1 - (lifeRatio - 0.7) / 0.3);
+    const alpha = p.alpha * fadeIn * fadeOut * layer.foamAlpha;
+    if (alpha <= 0) continue;
+
+    ctx.beginPath();
+    ctx.arc(p.xOffset % W, wy + Math.random() * 4, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(220, 235, 255, ${alpha})`;
+    ctx.fill();
+  }
+}
+
+function animate() {
+  beginFrame();
+  time++;
+
+  ctx.clearRect(0, 0, W, H);
+
+  drawSky();
+
+  const horizonGlow = ctx.createLinearGradient(0, HORIZON - 15, 0, HORIZON + 30);
+  horizonGlow.addColorStop(0, 'rgba(240, 180, 80, 0.15)');
+  horizonGlow.addColorStop(0.5, 'rgba(200, 120, 60, 0.08)');
+  horizonGlow.addColorStop(1, 'rgba(40, 70, 120, 0)');
+  ctx.fillStyle = horizonGlow;
+  ctx.fillRect(0, HORIZON - 15, W, 45);
+
+  for (let i = waveLayers.length - 1; i >= 0; i--) {
+    drawWaveLayer(waveLayers[i]);
+  }
+
+  drawSunReflection();
+  drawFoamParticles();
+
+  const vignette = ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.75);
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(1, 'rgba(0,0,10,0.3)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, W, H);
+
+  requestAnimationFrame(animate);
+}
+
+syncViewport();
+window.addEventListener('resize', syncViewport);
+animate();
+</script>
+</body>
+</html>

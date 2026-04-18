@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Warp Speed Starfield</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { margin: 0; background: black; overflow: hidden; width: 100vw; height: 100vh; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+const W = 400, H = 400;
+const CX = W / 2, CY = H / 2;
+
+let vpw = Math.max(1, window.innerWidth);
+let vph = Math.max(1, window.innerHeight);
+let dpr = 1;
+
+function syncViewport() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  vpw = Math.max(1, window.innerWidth);
+  vph = Math.max(1, window.innerHeight);
+  canvas.width = Math.floor(vpw * dpr);
+  canvas.height = Math.floor(vph * dpr);
+}
+
+function beginFrame() {
+  syncViewport();
+  ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+}
+
+const stars = [];
+const STAR_COUNT = 800;
+
+function resetStar(s) {
+  const angle = Math.random() * Math.PI * 2;
+  const radius = Math.random() * 5;
+
+  s.x = CX + Math.cos(angle) * radius;
+  s.y = CY + Math.sin(angle) * radius;
+  s.z = Math.random() * W;
+  s.px = s.x;
+  s.py = s.y;
+}
+
+for (let i = 0; i < STAR_COUNT; i++) {
+  const s = {};
+  resetStar(s);
+  stars.push(s);
+}
+
+function updateStars() {
+  stars.forEach(s => {
+    s.px = s.x;
+    s.py = s.y;
+
+    s.z -= 4;
+
+    if (s.z <= 1) {
+      resetStar(s);
+      return;
+    }
+
+    const k = 128 / s.z;
+    s.x = CX + (s.x - CX) * k;
+    s.y = CY + (s.y - CY) * k;
+  });
+}
+
+function drawStars() {
+  stars.forEach(s => {
+    const dx = s.x - s.px;
+    const dy = s.y - s.py;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+
+    const brightness = Math.min(1, 1 - s.z / W);
+
+    ctx.beginPath();
+    ctx.moveTo(s.px, s.py);
+    ctx.lineTo(s.x, s.y);
+
+    ctx.strokeStyle = `rgba(255,255,255,${brightness})`;
+    ctx.lineWidth = Math.max(1, dist);
+
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = "white";
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  });
+}
+
+function animate() {
+  beginFrame();
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.fillRect(0, 0, W, H);
+
+  updateStars();
+  drawStars();
+
+  requestAnimationFrame(animate);
+}
+
+syncViewport();
+window.addEventListener("resize", syncViewport);
+animate();
+</script>
+</body>
+</html>

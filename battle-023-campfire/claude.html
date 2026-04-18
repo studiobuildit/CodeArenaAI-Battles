@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Night Campfire</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="fireCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('fireCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = 540;
+        const H = 960;
+
+        let particles = [];
+        let stars = [];
+        let logs = [];
+        let time = 0;
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+            canvas.width = vpw * dpr;
+            canvas.height = vph * dpr;
+        }
+
+        function setup() {
+            for (let i = 0; i < 200; i++) {
+                stars.push({
+                    x: Math.random() * W,
+                    y: Math.random() * H * 0.7,
+                    s: Math.random() * 2,
+                    o: Math.random() * 0.5 + 0.3
+                });
+            }
+            logs = [
+                {x: W/2-60, y: H-100, w: 120, h: 40, a: -0.2},
+                {x: W/2-40, y: H-120, w: 100, h: 35, a: 0.1},
+                {x: W/2-20, y: H-140, w: 80, h: 30, a: -0.3}
+            ];
+        }
+
+        class Particle {
+            constructor() {
+                this.reset();
+                this.y = H - 150 - Math.random() * 200;
+            }
+            reset() {
+                this.x = W / 2 + (Math.random() - 0.5) * 60;
+                this.y = H - 150;
+                this.vx = (Math.random() - 0.5) * 1.5;
+                this.vy = -Math.random() * 2 - 1;
+                this.type = Math.random() < 0.8 ? 'flame' : 'ember';
+                this.size = this.type === 'flame' ? 15 + Math.random() * 10 : 2 + Math.random() * 3;
+                this.life = this.type === 'flame' ? 40 + Math.random() * 30 : 100 + Math.random() * 50;
+                this.maxLife = this.life;
+                this.alpha = 1;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life--;
+                this.alpha = this.life / this.maxLife;
+                if (this.type === 'flame') {
+                    this.size -= 0.2;
+                    if (this.size < 1) this.size = 1;
+                }
+                if (this.life <= 0) {
+                    this.reset();
+                }
+            }
+            draw() {
+                ctx.globalAlpha = this.alpha;
+                ctx.beginPath();
+                if (this.type === 'flame') {
+                    ctx.fillStyle = `rgb(255, ${200 - this.alpha * 150}, ${50 - this.alpha * 50})`;
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                } else {
+                    ctx.fillStyle = `rgba(255, 200, 50, ${this.alpha})`;
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                }
+                ctx.fill();
+            }
+        }
+
+        for (let i = 0; i < 150; i++) particles.push(new Particle());
+
+        function drawLogs() {
+            ctx.fillStyle = '#4a2511';
+            logs.forEach(log => {
+                ctx.save();
+                ctx.translate(log.x + log.w / 2, log.y + log.h / 2);
+                ctx.rotate(log.a);
+                ctx.fillRect(-log.w / 2, -log.h / 2, log.w, log.h);
+                ctx.fillStyle = '#33190b';
+                ctx.fillRect(-log.w / 2 + 5, -log.h / 2 + 5, log.w - 10, log.h - 10);
+                ctx.restore();
+            });
+        }
+
+        function draw() {
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+            const dpr = window.devicePixelRatio || 1;
+            ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+
+            ctx.fillStyle = '#0a0a14';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.fillStyle = 'white';
+            stars.forEach(star => {
+                ctx.globalAlpha = star.o * (1 + 0.3 * Math.sin(time + star.s));
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.s, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+
+            let flicker = 1 + 0.1 * Math.sin(time * 5);
+            let gradient = ctx.createRadialGradient(W/2, H-120, 50 * flicker, W/2, H-120, 250 * flicker);
+            gradient.addColorStop(0, 'rgba(255, 100, 20, 0.4)');
+            gradient.addColorStop(1, 'rgba(255, 100, 20, 0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, H - 400, W, 400);
+
+            drawLogs();
+
+            ctx.globalCompositeOperation = 'lighter';
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            ctx.globalCompositeOperation = 'source-over';
+
+            time += 0.05;
+            requestAnimationFrame(draw);
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        setup();
+        draw();
+    </script>
+</body>
+</html>

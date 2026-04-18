@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AI Pong CRT</title>
+<style>
+  html, body {
+    margin: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: black;
+  }
+  canvas {
+    width: 100vw;
+    height: 100vh;
+    display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+const W = 540;
+const H = 960;
+
+let dpr = window.devicePixelRatio || 1;
+let vpw = 0, vph = 0;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  vpw = window.innerWidth;
+  vph = window.innerHeight;
+  canvas.width = vpw * dpr;
+  canvas.height = vph * dpr;
+}
+window.addEventListener("resize", resize);
+resize();
+
+let leftScore = 0;
+let rightScore = 0;
+
+const paddleH = 140;
+const paddleW = 12;
+
+let left = { y: H/2 };
+let right = { y: H/2 };
+
+let ball = {
+  x: W/2,
+  y: H/2,
+  vx: 6,
+  vy: 3
+};
+
+function resetBall(dir=1) {
+  ball.x = W/2;
+  ball.y = H/2;
+  ball.vx = 6 * dir;
+  ball.vy = (Math.random()-0.5)*6;
+}
+
+function updateAI() {
+  const speed = 6;
+
+  if (left.y < ball.y) left.y += speed;
+  else left.y -= speed;
+
+  if (right.y < ball.y) right.y += speed;
+  else right.y -= speed;
+
+  left.y = Math.max(paddleH/2, Math.min(H-paddleH/2, left.y));
+  right.y = Math.max(paddleH/2, Math.min(H-paddleH/2, right.y));
+}
+
+function updateBall() {
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+  if (ball.y < 0 || ball.y > H) {
+    ball.vy *= -1;
+  }
+
+  if (
+    ball.x < 40 &&
+    Math.abs(ball.y - left.y) < paddleH/2
+  ) {
+    ball.vx *= -1.05;
+  }
+
+  if (
+    ball.x > W-40 &&
+    Math.abs(ball.y - right.y) < paddleH/2
+  ) {
+    ball.vx *= -1.05;
+  }
+
+  if (ball.x < 0) {
+    rightScore++;
+    resetBall(1);
+  }
+  if (ball.x > W) {
+    leftScore++;
+    resetBall(-1);
+  }
+}
+
+function crtGlow() {
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = "rgba(0,255,100,0.08)";
+  ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation = "source-over";
+}
+
+function scanlines() {
+  ctx.fillStyle = "rgba(0,0,0,0.15)";
+  for (let y = 0; y < H; y += 4) {
+    ctx.fillRect(0, y, W, 2);
+  }
+}
+
+function drawGame() {
+  ctx.fillStyle = "#001a00";
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle = "#00ff88";
+  ctx.shadowBlur = 20;
+  ctx.shadowColor = "#00ff88";
+
+  ctx.fillRect(20, left.y - paddleH/2, paddleW, paddleH);
+  ctx.fillRect(W-32, right.y - paddleH/2, paddleW, paddleH);
+
+  ctx.fillRect(ball.x-6, ball.y-6, 12, 12);
+
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = "rgba(0,255,100,0.2)";
+  for (let y = 0; y < H; y += 30) {
+    ctx.fillRect(W/2-2, y, 4, 16);
+  }
+
+  ctx.fillStyle = "#00ff88";
+  ctx.font = "bold 64px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(leftScore, W*0.25, 100);
+  ctx.fillText(rightScore, W*0.75, 100);
+
+  crtGlow();
+  scanlines();
+}
+
+function update() {
+  updateAI();
+  updateBall();
+}
+
+function animate() {
+  update();
+
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  ctx.setTransform((vpw/W)*dpr, 0, 0, (vph/H)*dpr, 0, 0);
+
+  drawGame();
+
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>

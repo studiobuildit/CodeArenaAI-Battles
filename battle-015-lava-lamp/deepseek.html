@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Lava Lamp | Fluid Motion</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: black;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: black;
+        }
+    </style>
+</head>
+<body>
+<canvas id="lavaCanvas"></canvas>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('lavaCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const W = 540;
+        const H = 960;
+        const CONTAINER = {
+            x: W * 0.2,
+            y: H * 0.12,
+            width: W * 0.6,
+            bottomY: H * 0.88,
+            neckY: H * 0.28
+        };
+        CONTAINER.rightX = CONTAINER.x + CONTAINER.width;
+        
+        class Blob {
+            constructor(x, y, radius, hue) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.targetRadius = radius;
+                this.hue = hue;
+                this.vx = (Math.random() - 0.5) * 0.35;
+                this.vy = (Math.random() - 0.5) * 0.25 - 0.2;
+                this.growth = 0;
+                this.phase = Math.random() * Math.PI * 2;
+                this.wobble = 0;
+            }
+            
+            update(blobs, idx) {
+                const upwardBias = -0.045;
+                this.vy += upwardBias;
+                this.vy += (Math.random() - 0.5) * 0.045;
+                this.vx += (Math.random() - 0.5) * 0.035;
+                this.vx *= 0.998;
+                this.vy *= 0.998;
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                const leftBound = CONTAINER.x + this.radius * 0.8;
+                const rightBound = CONTAINER.rightX - this.radius * 0.8;
+                if (this.x < leftBound) {
+                    this.x = leftBound;
+                    this.vx *= -0.6;
+                }
+                if (this.x > rightBound) {
+                    this.x = rightBound;
+                    this.vx *= -0.6;
+                }
+                
+                const topBound = CONTAINER.y + this.radius * 1.2;
+                if (this.y - this.radius < topBound) {
+                    this.y = topBound + this.radius;
+                    this.vy *= -0.45;
+                    this.vy += 0.2;
+                }
+                
+                const bottomBound = CONTAINER.bottomY - this.radius * 1.1;
+                if (this.y + this.radius > bottomBound) {
+                    this.y = bottomBound - this.radius;
+                    this.vy *= -0.4;
+                    this.vy -= 0.15;
+                    this.vx += (Math.random() - 0.5) * 0.2;
+                }
+                
+                for (let i = 0; i < blobs.length; i++) {
+                    if (i === idx) continue;
+                    const other = blobs[i];
+                    const dx = this.x - other.x;
+                    const dy = this.y - other.y;
+                    const dist = Math.hypot(dx, dy);
+                    const minDist = (this.radius + other.radius) * 0.85;
+                    
+                    if (dist < minDist && this.radius + other.radius < 55) {
+                        if (this.radius >= other.radius) {
+                            const newRadius = Math.min(42, Math.sqrt(this.radius * this.radius + other.radius * other.radius) * 0.95);
+                            this.radius = newRadius;
+                            this.hue = (this.hue + other.hue) / 2;
+                            this.vx = (this.vx * this.radius + other.vx * other.radius) / (this.radius + other.radius);
+                            this.vy = (this.vy * this.radius + other.vy * other.radius) / (this.radius + other.radius);
+                            blobs.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+                
+                if (this.radius > 32 && Math.random() < 0.002) {
+                    const newRadius = this.radius * 0.55;
+                    const newBlob = new Blob(this.x + (Math.random() - 0.5) * 14, this.y + (Math.random() - 0.5) * 14, newRadius, (this.hue + 25) % 360);
+                    newBlob.vx = this.vx + (Math.random() - 0.5) * 0.7;
+                    newBlob.vy = this.vy + (Math.random() - 0.5) * 0.5;
+                    blobs.push(newBlob);
+                    this.radius *= 0.65;
+                    if (this.radius < 9) this.radius = 10;
+                }
+                
+                this.wobble += 0.03;
+                this.radius = this.radius * 0.99 + this.targetRadius * 0.01;
+                this.targetRadius = Math.min(45, Math.max(12, this.targetRadius + (Math.random() - 0.5) * 0.08));
+                this.hue = (this.hue + 0.15) % 360;
+            }
+            
+            draw() {
+                const grad = ctx.createRadialGradient(
+                    this.x - this.radius * 0.25, 
+                    this.y - this.radius * 0.25, 
+                    this.radius * 0.2,
+                    this.x, 
+                    this.y, 
+                    this.radius * 1.1
+                );
+                grad.addColorStop(0, `hsl(${this.hue}, 95%, 65%)`);
+                grad.addColorStop(0.5, `hsl(${this.hue + 15}, 90%, 55%)`);
+                grad.addColorStop(1, `hsl(${this.hue - 10}, 85%, 45%)`);
+                ctx.fillStyle = grad;
+                ctx.shadowBlur = 18;
+                ctx.shadowColor = `hsl(${this.hue}, 90%, 55%)`;
+                ctx.beginPath();
+                ctx.ellipse(this.x, this.y, this.radius, this.radius * 1.05, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.ellipse(this.x - this.radius * 0.2, this.y - this.radius * 0.2, this.radius * 0.3, this.radius * 0.25, 0, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 220, 150, 0.4)`;
+                ctx.fill();
+            }
+        }
+        
+        let blobs = [];
+        
+        function initBlobs() {
+            blobs = [];
+            const blobCount = 18;
+            for (let i = 0; i < blobCount; i++) {
+                const radius = 12 + Math.random() * 28;
+                const hue = 15 + Math.random() * 40;
+                const x = CONTAINER.x + Math.random() * CONTAINER.width;
+                const y = CONTAINER.y + Math.random() * (CONTAINER.bottomY - CONTAINER.y);
+                const blob = new Blob(x, y, radius, hue);
+                blobs.push(blob);
+            }
+        }
+
+        function drawContainer() {
+            const radius = 38;
+            ctx.beginPath();
+            ctx.moveTo(CONTAINER.x + radius, CONTAINER.y);
+            ctx.lineTo(CONTAINER.rightX - radius, CONTAINER.y);
+            ctx.quadraticCurveTo(CONTAINER.rightX, CONTAINER.y, CONTAINER.rightX, CONTAINER.y + radius);
+            ctx.lineTo(CONTAINER.rightX, CONTAINER.bottomY - radius);
+            ctx.quadraticCurveTo(CONTAINER.rightX, CONTAINER.bottomY, CONTAINER.rightX - radius, CONTAINER.bottomY);
+            ctx.lineTo(CONTAINER.x + radius, CONTAINER.bottomY);
+            ctx.quadraticCurveTo(CONTAINER.x, CONTAINER.bottomY, CONTAINER.x, CONTAINER.bottomY - radius);
+            ctx.lineTo(CONTAINER.x, CONTAINER.y + radius);
+            ctx.quadraticCurveTo(CONTAINER.x, CONTAINER.y, CONTAINER.x + radius, CONTAINER.y);
+            ctx.closePath();
+            
+            ctx.fillStyle = "rgba(25, 35, 50, 0.45)";
+            ctx.fill();
+            ctx.strokeStyle = "rgba(200, 220, 255, 0.4)";
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(CONTAINER.x + 15, CONTAINER.y + 18);
+            ctx.lineTo(CONTAINER.x + 32, CONTAINER.y + 12);
+            ctx.lineTo(CONTAINER.x + 28, CONTAINER.y + 28);
+            ctx.fillStyle = "rgba(255, 250, 210, 0.2)";
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.ellipse(CONTAINER.rightX - 25, CONTAINER.y + 45, 12, 18, -0.3, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(255, 255, 245, 0.12)";
+            ctx.fill();
+
+            ctx.fillStyle = "#8a6a4a";
+            ctx.fillRect(CONTAINER.x - 8, CONTAINER.bottomY - 8, CONTAINER.width + 16, 12);
+            ctx.fillStyle = "#c9a87a";
+            ctx.fillRect(CONTAINER.x - 5, CONTAINER.bottomY - 5, CONTAINER.width + 10, 8);
+
+            ctx.fillStyle = "#8a6a4a";
+            ctx.fillRect(CONTAINER.x - 8, CONTAINER.y - 12, CONTAINER.width + 16, 14);
+            ctx.fillStyle = "#c9a87a";
+            ctx.fillRect(CONTAINER.x - 5, CONTAINER.y - 8, CONTAINER.width + 10, 8);
+        }
+
+        function drawBackground() {
+            const grad = ctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, "#080c18");
+            grad.addColorStop(1, "#020408");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            const backGlow = ctx.createRadialGradient(W/2, H/2, 40, W/2, H/2, 240);
+            backGlow.addColorStop(0, "rgba(80, 40, 20, 0.25)");
+            backGlow.addColorStop(1, "rgba(0,0,0,0)");
+            ctx.fillStyle = backGlow;
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        let embers = [];
+        const EMBER_COUNT = 85;
+
+        class Ember {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.x = CONTAINER.x + Math.random() * CONTAINER.width;
+                this.y = CONTAINER.y + Math.random() * (CONTAINER.bottomY - CONTAINER.y);
+                this.radius = Math.random() * 2.2 + 0.8;
+                this.vy = (Math.random() * 0.15 + 0.05);
+                this.vx = (Math.random() - 0.5) * 0.12;
+                this.life = Math.random() * 0.8 + 0.3;
+                this.hue = 25 + Math.random() * 35;
+            }
+            update() {
+                this.y -= this.vy;
+                this.x += this.vx;
+                this.life -= 0.003;
+                if (this.y < CONTAINER.y - 10 || this.y > CONTAINER.bottomY + 15 || this.life <= 0.02) {
+                    this.reset();
+                    this.y = CONTAINER.bottomY - 5;
+                    this.life = 0.9;
+                }
+                this.hue += 0.6;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `hsla(${this.hue}, 95%, 65%, ${this.life * 0.6})`;
+                ctx.fill();
+            }
+        }
+
+        function initEmbers() {
+            for (let i = 0; i < EMBER_COUNT; i++) embers.push(new Ember());
+        }
+
+        function updateBlobs() {
+            for (let i = 0; i < blobs.length; i++) blobs[i].update(blobs, i);
+            if (blobs.length < 8) {
+                const newBlob = new Blob(CONTAINER.x + CONTAINER.width/2, CONTAINER.bottomY - 20, 14 + Math.random() * 12, 20 + Math.random() * 40);
+                blobs.push(newBlob);
+            }
+            if (blobs.length > 28) blobs = blobs.slice(0, 26);
+        }
+
+        function drawInnerGlow() {
+            ctx.globalCompositeOperation = 'lighter';
+            const grad = ctx.createRadialGradient(W/2, H/2, 30, W/2, H/2, 200);
+            grad.addColorStop(0, "rgba(255, 80, 30, 0.05)");
+            grad.addColorStop(1, "rgba(0,0,0,0)");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        let dpr = window.devicePixelRatio || 1;
+        let viewportW = window.innerWidth;
+        let viewportH = window.innerHeight;
+
+        function resizeCanvas() {
+            viewportW = window.innerWidth;
+            viewportH = window.innerHeight;
+            canvas.width = viewportW * dpr;
+            canvas.height = viewportH * dpr;
+            canvas.style.width = `${viewportW}px`;
+            canvas.style.height = `${viewportH}px`;
+        }
+
+        function applyTransform() {
+            const scaleX = (viewportW * dpr) / W;
+            const scaleY = (viewportH * dpr) / H;
+            ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+        }
+
+        function animate() {
+            updateBlobs();
+            for (let e of embers) e.update();
+
+            applyTransform();
+
+            drawBackground();
+            drawContainer();
+
+            for (let blob of blobs) blob.draw();
+
+            drawInnerGlow();
+
+            for (let e of embers) e.draw();
+
+            ctx.shadowBlur = 0;
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = "rgba(80, 50, 30, 0.06)";
+            ctx.fillRect(0, 0, W, H);
+            ctx.globalCompositeOperation = 'source-over';
+
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', () => {
+            dpr = window.devicePixelRatio || 1;
+            resizeCanvas();
+            applyTransform();
+        });
+
+        initBlobs();
+        initEmbers();
+        resizeCanvas();
+        applyTransform();
+        animate();
+    })();
+</script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bouncing Balls Physics</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { margin: 0; background: black; overflow: hidden; width: 100vw; height: 100vh; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+const W = 400, H = 400;
+
+let vpw = Math.max(1, window.innerWidth);
+let vph = Math.max(1, window.innerHeight);
+let dpr = 1;
+
+function syncViewport() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  vpw = Math.max(1, window.innerWidth);
+  vph = Math.max(1, window.innerHeight);
+  canvas.width = Math.floor(vpw * dpr);
+  canvas.height = Math.floor(vph * dpr);
+}
+
+function beginFrame() {
+  syncViewport();
+  ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+}
+
+const GRAVITY = 0.2;
+const ELASTICITY = 0.9;
+const DAMPING = 0.999;
+
+const balls = [];
+
+function randomColor() {
+  return `hsl(${Math.random() * 360},100%,60%)`;
+}
+
+function createBall() {
+  const r = 8 + Math.random() * 12;
+  return {
+    x: r + Math.random() * (W - 2 * r),
+    y: r + Math.random() * (H - 2 * r),
+    vx: (Math.random() - 0.5) * 4,
+    vy: (Math.random() - 0.5) * 4,
+    r,
+    mass: r,
+    color: randomColor()
+  };
+}
+
+for (let i = 0; i < 20; i++) {
+  balls.push(createBall());
+}
+
+function resolveCollision(a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist === 0) return;
+
+  const overlap = a.r + b.r - dist;
+  if (overlap > 0) {
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    a.x -= nx * overlap / 2;
+    a.y -= ny * overlap / 2;
+    b.x += nx * overlap / 2;
+    b.y += ny * overlap / 2;
+
+    const vx = b.vx - a.vx;
+    const vy = b.vy - a.vy;
+
+    const dot = vx * nx + vy * ny;
+
+    if (dot > 0) return;
+
+    const impulse = (2 * dot) / (a.mass + b.mass);
+
+    a.vx += impulse * b.mass * nx;
+    a.vy += impulse * b.mass * ny;
+    b.vx -= impulse * a.mass * nx;
+    b.vy -= impulse * a.mass * ny;
+  }
+}
+
+function update() {
+  balls.forEach(b => {
+    b.vy += GRAVITY;
+
+    b.vx *= DAMPING;
+    b.vy *= DAMPING;
+
+    b.x += b.vx;
+    b.y += b.vy;
+
+    if (b.x - b.r < 0) {
+      b.x = b.r;
+      b.vx *= -ELASTICITY;
+    }
+    if (b.x + b.r > W) {
+      b.x = W - b.r;
+      b.vx *= -ELASTICITY;
+    }
+    if (b.y - b.r < 0) {
+      b.y = b.r;
+      b.vy *= -ELASTICITY;
+    }
+    if (b.y + b.r > H) {
+      b.y = H - b.r;
+      b.vy *= -ELASTICITY;
+    }
+  });
+
+  for (let i = 0; i < balls.length; i++) {
+    for (let j = i + 1; j < balls.length; j++) {
+      resolveCollision(balls[i], balls[j]);
+    }
+  }
+}
+
+function draw() {
+  balls.forEach(b => {
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+
+    ctx.fillStyle = b.color;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = b.color;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  });
+}
+
+function animate() {
+  beginFrame();
+  ctx.fillStyle = "rgba(0,0,0,0.2)";
+  ctx.fillRect(0, 0, W, H);
+
+  update();
+  draw();
+
+  requestAnimationFrame(animate);
+}
+
+syncViewport();
+window.addEventListener("resize", syncViewport);
+animate();
+</script>
+</body>
+</html>

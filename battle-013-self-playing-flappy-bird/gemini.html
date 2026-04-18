@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Flappy Bird</title>
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #000;
+}
+canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const W = 540, H = 960;
+let dpr = window.devicePixelRatio || 1;
+let vpw = window.innerWidth;
+let vph = window.innerHeight;
+
+function resize() {
+    dpr = window.devicePixelRatio || 1;
+    vpw = window.innerWidth;
+    vph = window.innerHeight;
+    canvas.width = Math.floor(vpw * dpr);
+    canvas.height = Math.floor(vph * dpr);
+}
+
+window.addEventListener('resize', resize);
+resize();
+
+let bird = { x: 120, y: H/2, vy: 0, radius: 18, angle: 0 };
+let pipes = [];
+let clouds = [];
+let score = 0;
+let gameSpeed = 3;
+let gravity = 0.4;
+let jumpStrength = -8;
+let frame = 0;
+let gameOver = false;
+
+for (let i = 0; i < 6; i++) {
+    clouds.push({
+        x: Math.random() * W,
+        y: Math.random() * H * 0.6,
+        speed: 0.3 + Math.random() * 0.5,
+        size: 40 + Math.random() * 60
+    });
+}
+
+function spawnPipe() {
+    const gap = 180;
+    const minHeight = 100;
+    const maxHeight = H - gap - minHeight - 100;
+    const topHeight = minHeight + Math.random() * (maxHeight - minHeight);
+    
+    pipes.push({
+        x: W,
+        topHeight: topHeight,
+        gap: gap,
+        passed: false,
+        width: 80
+    });
+}
+
+function reset() {
+    bird.y = H/2;
+    bird.vy = 0;
+    bird.angle = 0;
+    pipes = [];
+    score = 0;
+    gameSpeed = 3;
+    gameOver = false;
+    spawnPipe();
+}
+
+function update() {
+    frame++;
+    
+    clouds.forEach(c => {
+        c.x -= c.speed;
+        if (c.x + c.size * 2 < 0) {
+            c.x = W + c.size;
+            c.y = Math.random() * H * 0.6;
+        }
+    });
+    
+    if (gameOver) {
+        if (frame % 60 === 0) reset();
+        return;
+    }
+    
+    bird.vy += gravity;
+    bird.y += bird.vy;
+    bird.angle = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, bird.vy * 0.08));
+    
+    let nextPipe = pipes.find(p => p.x + p.width > bird.x - bird.radius);
+    
+    if (nextPipe) {
+        const pipeCenter = nextPipe.topHeight + nextPipe.gap / 2;
+        const distToPipe = nextPipe.x - bird.x;
+        
+        if (distToPipe < 200) {
+            if (bird.y > pipeCenter + 30) {
+                bird.vy = jumpStrength;
+            } else if (bird.y < pipeCenter - 30 && bird.vy < -3) {
+            } else if (bird.y > pipeCenter - 10 && bird.vy > 2) {
+                bird.vy = jumpStrength * 0.7;
+            }
+        } else {
+            if (bird.y > H * 0.6) bird.vy = jumpStrength * 0.5;
+            if (bird.y < H * 0.3) bird.vy = Math.max(0, bird.vy);
+        }
+    } else {
+        if (bird.y > H * 0.6) bird.vy = jumpStrength * 0.5;
+    }
+    
+    if (bird.y < bird.radius) {
+        bird.y = bird.radius;
+        bird.vy = 0;
+    }
+    if (bird.y > H - bird.radius - 20) {
+        gameOver = true;
+    }
+    
+    pipes.forEach(p => {
+        p.x -= gameSpeed;
+        
+        if (!p.passed && p.x + p.width < bird.x) {
+            p.passed = true;
+            score++;
+            gameSpeed = Math.min(5, 3 + score * 0.1);
+        }
+        
+        if (bird.x + bird.radius > p.x && bird.x - bird.radius < p.x + p.width) {
+            if (bird.y - bird.radius < p.topHeight || bird.y + bird.radius > p.topHeight + p.gap) {
+                gameOver = true;
+            }
+        }
+    });
+    
+    pipes = pipes.filter(p => p.x + p.width > -50);
+    if (pipes.length === 0 || pipes[pipes.length - 1].x < W - 280) spawnPipe();
+}
+
+function drawPixelRect(x, y, w, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.floor(x), Math.floor(y), Math.floor(w), Math.floor(h));
+}
+
+function drawCloud(c) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    const s = c.size;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, s * 0.5, 0, Math.PI * 2);
+    ctx.arc(c.x + s * 0.4, c.y - s * 0.1, s * 0.4, 0, Math.PI * 2);
+    ctx.arc(c.x + s * 0.8, c.y, s * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawBird() {
+    ctx.save();
+    ctx.translate(bird.x, bird.y);
+    ctx.rotate(bird.angle);
+    drawPixelRect(-16, -12, 32, 24, '#FFD700');
+    drawPixelRect(-14, -10, 28, 20, '#FFED4A');
+    drawPixelRect(6, -8, 10, 10, '#FFF');
+    drawPixelRect(10, -6, 4, 6, '#000');
+    drawPixelRect(12, -2, 12, 6, '#FF6B35');
+    drawPixelRect(14, 0, 8, 4, '#FF8C42');
+    const wingY = Math.sin(frame * 0.3) * 6;
+    drawPixelRect(-8, 2 + wingY, 14, 10, '#FFA500');
+    drawPixelRect(-20, -4, 8, 8, '#FF6B35');
+    ctx.restore();
+}
+
+function drawPipe(p) {
+    const w = p.width;
+    const th = p.topHeight;
+    const grad1 = ctx.createLinearGradient(p.x, 0, p.x + w, 0);
+    grad1.addColorStop(0, '#2E7D32');
+    grad1.addColorStop(0.5, '#4CAF50');
+    grad1.addColorStop(1, '#1B5E20');
+    ctx.fillStyle = grad1;
+    ctx.fillRect(p.x, 0, w, th);
+    ctx.fillStyle = '#388E3C';
+    ctx.fillRect(p.x - 4, th - 30, w + 8, 30);
+    ctx.fillStyle = '#66BB6A';
+    ctx.fillRect(p.x - 2, th - 28, w + 4, 4);
+    const bh = H - th - p.gap;
+    const grad2 = ctx.createLinearGradient(p.x, H - bh, p.x + w, H);
+    grad2.addColorStop(0, '#2E7D32');
+    grad2.addColorStop(0.5, '#4CAF50');
+    grad2.addColorStop(1, '#1B5E20');
+    ctx.fillStyle = grad2;
+    ctx.fillRect(p.x, H - bh, w, bh);
+    ctx.fillStyle = '#388E3C';
+    ctx.fillRect(p.x - 4, H - bh, w + 8, 30);
+    ctx.fillStyle = '#66BB6A';
+    ctx.fillRect(p.x - 2, H - bh + 4, w + 4, 4);
+}
+
+function draw() {
+    ctx.setTransform((vpw/W) * dpr, 0, 0, (vph/H) * dpr, 0, 0);
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+    skyGrad.addColorStop(0, '#4FC3F7');
+    skyGrad.addColorStop(0.7, '#81D4FA');
+    skyGrad.addColorStop(1, '#B3E5FC');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, H);
+    clouds.forEach(c => drawCloud(c));
+    ctx.fillStyle = '#DEB887';
+    ctx.fillRect(0, H - 20, W, 20);
+    ctx.fillStyle = '#8B7355';
+    for (let i = 0; i < W; i += 30) ctx.fillRect(i, H - 20, 15, 20);
+    pipes.forEach(p => drawPipe(p));
+    drawBird();
+    ctx.fillStyle = '#FFF';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
+    ctx.font = 'bold 60px Arial';
+    ctx.textAlign = 'center';
+    ctx.strokeText(score, W/2, 100);
+    ctx.fillText(score, W/2, 100);
+    if (gameOver) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#FF5252';
+        ctx.font = 'bold 50px Arial';
+        ctx.fillText('GAME OVER', W/2, H/2 - 50);
+        ctx.fillStyle = '#FFF';
+        ctx.font = '30px Arial';
+        ctx.fillText('Restarting...', W/2, H/2 + 20);
+    }
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+reset();
+loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wrecking Ball Demolition</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #0a0a12;
+  }
+  #wrap {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0a0a12;
+  }
+  #game {
+    display: block;
+    background: #000;
+    image-rendering: auto;
+  }
+  #model-tag {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 20;
+    font: bold 11px monospace;
+    color: #d8c8ff;
+    background: rgba(0,0,0,0.45);
+    padding: 4px 7px;
+    border-radius: 4px;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="model-tag">CLAUDE</div>
+<div id="wrap">
+  <canvas id="game"></canvas>
+</div>
+<script>
+(() => {
+  const LOGICAL_W = 540;
+  const LOGICAL_H = 960;
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const ratio = LOGICAL_W / LOGICAL_H;
+    let cssW, cssH;
+    if (vw / vh > ratio) {
+      cssH = vh;
+      cssW = vh * ratio;
+    } else {
+      cssW = vw;
+      cssH = vw / ratio;
+    }
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    canvas.width = Math.floor(LOGICAL_W * dpr);
+    canvas.height = Math.floor(LOGICAL_H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const W = LOGICAL_W;
+  const H = LOGICAL_H;
+  const GROUND_Y = H - 110;
+
+  // --- Sky & city (decorative) ---
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  skyGrad.addColorStop(0, '#4a90d9');
+  skyGrad.addColorStop(0.35, '#87b8e8');
+  skyGrad.addColorStop(0.72, '#c9d9f0');
+  skyGrad.addColorStop(1, '#e8eef5');
+
+  const citySilhouette = [
+    { x: 0, w: 45, h: 95 },
+    { x: 50, w: 38, h: 130 },
+    { x: 95, w: 55, h: 75 },
+    { x: 158, w: 42, h: 110 },
+    { x: 388, w: 48, h: 88 },
+    { x: 442, w: 36, h: 140 },
+    { x: 485, w: 55, h: 70 }
+  ];
+
+  // --- Crane / pendulum ---
+  const pivot = { x: 72, y: 108 };
+  const CABLE_LEN = 298;
+  const BALL_R = 24;
+  let theta = 0.85; // rad from vertical, + = to the right
+  let omega = 0;
+  const PEND_G = 2850;
+  const PEND_DAMP = 0.9988;
+  const PUSH_STRENGTH = 0.00115; // small periodic nudge so it never fully stops
+
+  function ballPos() {
+    const bx = pivot.x + CABLE_LEN * Math.sin(theta);
+    const by = pivot.y + CABLE_LEN * Math.cos(theta);
+    return { x: bx, y: by };
+  }
+
+  function ballVel() {
+    const c = Math.cos(theta);
+    const s = Math.sin(theta);
+    return {
+      vx: CABLE_LEN * omega * c,
+      vy: CABLE_LEN * omega * (-s)
+    };
+  }
+
+  // --- Bricks ---
+  const BRICK_W = 26;
+  const BRICK_H = 12;
+  const BRICK_GAP = 2;
+  const BUILDING_LEFT = 268;
+  const BUILDING_TOP = GROUND_Y - 26 * (12 + BRICK_GAP);
+  const COLS = 8;
+  const ROWS = 26;
+
+  let bricks = [];
+  let totalBricks = 0;
+
+  function brickColor(row, col) {
+    const r = 160 + (row % 4) * 8;
+    const g = 55 + (col % 5) * 5;
+    const b = 38 + (row % 3) * 6;
+    return `rgb(${Math.min(220, r)},${Math.min(90, g)},${Math.min(70, b)})`;
+  }
+
+  function hueVariant(row, col) {
+    return brickColor(row, col);
+  }
+
+  function spawnBuilding() {
+    bricks = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const x = BUILDING_LEFT + c * (BRICK_W + BRICK_GAP);
+        const y = BUILDING_TOP + r * (BRICK_H + BRICK_GAP);
+        bricks.push({
+          x, y, w: BRICK_W, h: BRICK_H,
+          hue: hueVariant(r, c)
+        });
+      }
+    }
+    totalBricks = bricks.length;
+  }
+
+  // --- Debris chunks ---
+  const chunks = [];
+  const MAX_CHUNKS = 520;
+
+  function spawnChunksFromBrick(b, impactVx, impactVy) {
+    const n = 4 + (Math.random() * 4) | 0;
+    for (let i = 0; i < n; i++) {
+      if (chunks.length >= MAX_CHUNKS) chunks.shift();
+      const sw = 4 + Math.random() * 8;
+      const sh = 3 + Math.random() * 7;
+      const cx = b.x + Math.random() * (b.w - sw);
+      const cy = b.y + Math.random() * (b.h - sh);
+      const sp = 120 + Math.random() * 380;
+      const ang = Math.random() * Math.PI * 2;
+      chunks.push({
+        x: cx, y: cy, w: sw, h: sh,
+        vx: impactVx * 0.35 + Math.cos(ang) * sp,
+        vy: impactVy * 0.25 + Math.sin(ang) * sp - 80,
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() - 0.5) * 14,
+        hue: b.hue,
+        grounded: false,
+        resting: false,
+        life: 1
+      });
+    }
+  }
+
+  // --- Dust / smoke ---
+  const particles = [];
+  const MAX_PARTICLES = 800;
+
+  function spawnDust(x, y, n, intensity = 1) {
+    for (let i = 0; i < n; i++) {
+      if (particles.length >= MAX_PARTICLES) particles.shift();
+      const a = Math.random() * Math.PI * 2;
+      const sp = (40 + Math.random() * 180) * intensity;
+      particles.push({
+        x: x + (Math.random() - 0.5) * 14,
+        y: y + (Math.random() - 0.5) * 14,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp - 40 * Math.random(),
+        r: 2 + Math.random() * 5 * intensity,
+        a: 0.35 + Math.random() * 0.45,
+        grow: 0.2 + Math.random() * 0.5,
+        kind: Math.random() < 0.65 ? 'dust' : 'smoke'
+      });
+    }
+  }
+
+  // --- Rubble pile: snap resting pieces to shallow stacks by horizontal overlap ---
+  function stackRestingChunk(c) {
+    c.y = GROUND_Y - c.h;
+    for (let pass = 0; pass < 4; pass++) {
+      for (const o of chunks) {
+        if (o === c || !o.resting) continue;
+        const sep = 1.2;
+        if (c.x + c.w <= o.x + sep || o.x + o.w <= c.x + sep) continue;
+        if (c.y + c.h > o.y && c.y < o.y + o.h * 0.5) {
+          c.y = o.y - c.h - 0.4;
+        }
+      }
+    }
+    if (c.y < GROUND_Y - 320) c.y = GROUND_Y - c.h;
+  }
+
+  function trimRestingDebris(maxResting) {
+    let n = 0;
+    for (const c of chunks) {
+      if (c.resting) n++;
+    }
+    while (n > maxResting) {
+      const idx = chunks.findIndex(x => x.resting);
+      if (idx === -1) break;
+      chunks.splice(idx, 1);
+      n--;
+    }
+  }
+
+  // --- Collision ---
+  function circleRect(cx, cy, r, rx, ry, rw, rh) {
+    const nx = Math.max(rx, Math.min(cx, rx + rw));
+    const ny = Math.max(ry, Math.min(cy, ry + rh));
+    const dx = cx - nx;
+    const dy = cy - ny;
+    return dx * dx + dy * dy < r * r;
+  }
+
+  function resolveHit(b, bvx, bvy) {
+    spawnChunksFromBrick(b, bvx, bvy);
+    spawnDust(b.x + b.w * 0.5, b.y + b.h * 0.5, 16 + (Math.random() * 10) | 0, 1.1);
+    const idx = bricks.indexOf(b);
+    if (idx !== -1) bricks.splice(idx, 1);
+    omega += (Math.random() - 0.5) * 0.35;
+    theta += (Math.random() - 0.5) * 0.02;
+  }
+
+  function shouldReset() {
+    const destroyed = totalBricks - bricks.length;
+    const ratio = destroyed / Math.max(1, totalBricks);
+    if (bricks.length === 0) return true;
+    if (ratio >= 0.8) return true;
+    return false;
+  }
+
+  function resetScene() {
+    spawnBuilding();
+    for (let i = chunks.length - 1; i >= 0; i--) chunks.splice(i, 1);
+    for (let i = particles.length - 1; i >= 0; i--) particles.splice(i, 1);
+    theta = 0.75 + Math.random() * 0.25;
+    omega = (Math.random() - 0.5) * 0.8;
+    spawnDust(BUILDING_LEFT + COLS * (BRICK_W + BRICK_GAP) * 0.5, GROUND_Y - 40, 35, 0.6);
+  }
+
+  spawnBuilding();
+
+  // --- Drawing helpers ---
+  function drawGround() {
+    const g = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+    g.addColorStop(0, '#3d4a3a');
+    g.addColorStop(0.4, '#2a3328');
+    g.addColorStop(1, '#1a1e18');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 22) {
+      ctx.beginPath();
+      ctx.moveTo(x, GROUND_Y);
+      ctx.lineTo(x + 40, H);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(0, GROUND_Y, W, 4);
+  }
+
+  function drawCity() {
+    ctx.fillStyle = '#2c3544';
+    for (const s of citySilhouette) {
+      ctx.fillRect(s.x, GROUND_Y - s.h, s.w, s.h);
+    }
+    ctx.fillStyle = '#1e2530';
+    for (const s of citySilhouette) {
+      ctx.fillRect(s.x + 4, GROUND_Y - s.h + 18, 6, 8);
+      ctx.fillRect(s.x + s.w - 14, GROUND_Y - s.h + 40, 5, 5);
+    }
+  }
+
+  function drawLattice(fromX, fromY, toX, toY) {
+    ctx.strokeStyle = 'rgba(45,55,70,0.95)';
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.stroke();
+
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const px = -uy * 9;
+    const py = ux * 9;
+    ctx.strokeStyle = 'rgba(120,135,160,0.75)';
+    ctx.lineWidth = 2;
+    const rungs = Math.floor(len / 22);
+    for (let i = 1; i < rungs; i++) {
+      const t = (i / rungs) * 0.92 + 0.04;
+      const cx = fromX + dx * t;
+      const cy = fromY + dy * t;
+      ctx.beginPath();
+      ctx.moveTo(cx - px * 1.8, cy - py * 1.8);
+      ctx.lineTo(cx + px * 1.8, cy + py * 1.8);
+      ctx.stroke();
+    }
+
+    ctx.strokeStyle = 'rgba(80,90,105,0.55)';
+    for (let i = 0; i < rungs - 1; i++) {
+      const t0 = (i / rungs) * 0.92 + 0.04;
+      const t1 = ((i + 1) / rungs) * 0.92 + 0.04;
+      const x0 = fromX + dx * t0;
+      const y0 = fromY + dy * t0;
+      const x1 = fromX + dx * t1;
+      const y1 = fromY + dy * t1;
+      ctx.beginPath();
+      ctx.moveTo(x0 - px, y0 - py);
+      ctx.lineTo(x1 + px, y1 + py);
+      ctx.moveTo(x0 + px, y0 + py);
+      ctx.lineTo(x1 - px, y1 - py);
+      ctx.stroke();
+    }
+  }
+
+  function drawCraneTower() {
+    const tx = pivot.x - 8;
+    const ty = pivot.y;
+    const bw = 14;
+    const bh = GROUND_Y - ty - 8;
+    ctx.fillStyle = '#3a4555';
+    ctx.fillRect(tx, ty, bw, bh);
+    for (let y = 0; y < bh; y += 18) {
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.fillRect(tx, ty + y, bw, 3);
+    }
+    ctx.strokeStyle = 'rgba(200,210,220,0.35)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(tx, ty, bw, bh);
+
+    const jibLen = 118;
+    ctx.fillStyle = '#4a5565';
+    ctx.beginPath();
+    ctx.moveTo(tx + bw, ty + 4);
+    ctx.lineTo(tx + bw + jibLen, ty + 18);
+    ctx.lineTo(tx + bw + jibLen - 6, ty + 28);
+    ctx.lineTo(tx + bw, ty + 16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.stroke();
+
+    ctx.fillStyle = '#5a6578';
+    ctx.beginPath();
+    ctx.arc(pivot.x, pivot.y, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#8899aa';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  function drawBall(bx, by) {
+    const grd = ctx.createRadialGradient(bx - 8, by - 8, 4, bx, by, BALL_R + 4);
+    grd.addColorStop(0, '#f0f4f8');
+    grd.addColorStop(0.35, '#a8b4c4');
+    grd.addColorStop(0.75, '#6a7688');
+    grd.addColorStop(1, '#3a4250');
+    ctx.beginPath();
+    ctx.arc(bx, by, BALL_R, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(bx - 7, by - 9, 5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fill();
+  }
+
+  function drawBricks() {
+    for (const b of bricks) {
+      ctx.fillStyle = b.hue;
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.fillRect(b.x + 2, b.y + 2, b.w - 4, 2);
+    }
+  }
+
+  let lastT = performance.now();
+
+  function frame(now) {
+    const dt = Math.min(0.033, (now - lastT) / 1000);
+    lastT = now;
+
+    theta += Math.sin(now * 0.00031) * PUSH_STRENGTH;
+
+    const alpha = (-PEND_G / CABLE_LEN) * Math.sin(theta);
+    omega += alpha * dt;
+    omega *= PEND_DAMP;
+    theta += omega * dt;
+
+    if (theta > 1.35) { theta = 1.35; omega *= -0.35; }
+    if (theta < -1.15) { theta = -1.15; omega *= -0.35; }
+
+    const bp = ballPos();
+    const bv = ballVel();
+
+    if (bp.y + BALL_R > GROUND_Y) {
+      const pen = bp.y + BALL_R - GROUND_Y;
+      theta -= (pen / CABLE_LEN) * 0.6 * Math.sign(Math.sin(theta)) * 0.5;
+      omega *= -0.42;
+      spawnDust(bp.x, GROUND_Y, 3, 0.45);
+    }
+
+    const hits = [];
+    for (const b of bricks) {
+      if (circleRect(bp.x, bp.y, BALL_R - 1, b.x, b.y, b.w, b.h)) {
+        hits.push(b);
+      }
+    }
+    for (const b of hits) resolveHit(b, bv.vx, bv.vy);
+
+    for (let i = chunks.length - 1; i >= 0; i--) {
+      const c = chunks[i];
+      if (c.resting) continue;
+      c.vy += 2200 * dt;
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+      c.rot += c.vr * dt;
+      c.vx *= 0.998;
+      if (c.y + c.h >= GROUND_Y) {
+        c.y = GROUND_Y - c.h;
+        c.vy *= -0.14;
+        c.vx *= 0.7;
+        c.vr *= 0.62;
+        if (!c.grounded) {
+          c.grounded = true;
+          spawnDust(c.x + c.w * 0.5, GROUND_Y, 2, 0.35);
+        }
+        if (Math.abs(c.vy) < 52 && Math.abs(c.vx) < 22) {
+          c.resting = true;
+          c.vx = 0;
+          c.vy = 0;
+          c.vr = 0;
+          stackRestingChunk(c);
+        }
+      }
+    }
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.985;
+      p.vy = p.vy * 0.99 + (p.kind === 'smoke' ? -12 : 6) * dt;
+      p.r += p.grow * 38 * dt;
+      p.a -= dt * (p.kind === 'smoke' ? 0.5 : 0.9);
+      if (p.a <= 0) particles.splice(i, 1);
+    }
+
+    trimRestingDebris(340);
+
+    if (shouldReset()) resetScene();
+
+    ctx.save();
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, GROUND_Y - 0);
+    drawCity();
+    drawGround();
+    drawCraneTower();
+
+    const ball = ballPos();
+    drawLattice(pivot.x, pivot.y, ball.x, ball.y);
+    drawBricks();
+
+    for (const c of chunks) {
+      ctx.save();
+      if (c.resting) {
+        ctx.fillStyle = c.hue;
+        ctx.fillRect(c.x, c.y, c.w, c.h);
+        ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+        ctx.strokeRect(c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1);
+      } else {
+        ctx.translate(c.x + c.w * 0.5, c.y + c.h * 0.5);
+        ctx.rotate(c.rot);
+        ctx.fillStyle = c.hue;
+        ctx.fillRect(-c.w * 0.5, -c.h * 0.5, c.w, c.h);
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+        ctx.strokeRect(-c.w * 0.5, -c.h * 0.5, c.w, c.h);
+      }
+      ctx.restore();
+    }
+
+    drawBall(ball.x, ball.y);
+
+    for (const p of particles) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      if (p.kind === 'smoke') {
+        ctx.fillStyle = `rgba(70,75,82,${p.a * 0.55})`;
+      } else {
+        ctx.fillStyle = `rgba(190,175,150,${p.a * 0.85})`;
+      }
+      ctx.fill();
+    }
+
+    ctx.restore();
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

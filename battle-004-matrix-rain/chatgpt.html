@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Matrix Rain</title>
+<style>
+  body {
+    margin: 0;
+    background: black;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const fontSize = 16;
+let dpr = 1;
+let w = window.innerWidth;
+let h = window.innerHeight;
+let columns;
+let drops;
+
+function resize() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  w = window.innerWidth;
+  h = window.innerHeight;
+  canvas.width = Math.max(1, Math.floor(w * dpr));
+  canvas.height = Math.max(1, Math.floor(h * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  columns = Math.floor(w / fontSize);
+  drops = Array(columns).fill(0);
+}
+resize();
+window.addEventListener("resize", resize);
+
+const chars = "アァイィウヴエカキクケコサシスセソABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*";
+
+function draw() {
+  ctx.fillStyle = "rgba(0,0,0,0.08)";
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.font = fontSize + "px monospace";
+
+  for (let i = 0; i < drops.length; i++) {
+    const char = chars[Math.floor(Math.random() * chars.length)];
+    const x = i * fontSize;
+    const y = drops[i] * fontSize;
+
+    ctx.fillStyle = "#aaffaa";
+    ctx.fillText(char, x, y);
+
+    ctx.fillStyle = "#00ff88";
+    ctx.fillText(char, x, y);
+
+    if (y > h && Math.random() > 0.975) {
+      drops[i] = 0;
+    }
+
+    drops[i]++;
+  }
+}
+
+function animate() {
+  draw();
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>

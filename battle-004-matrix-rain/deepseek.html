@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Matrix Digital Rain | Neon Green Codefall</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000000;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+        canvas {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+        }
+    </style>
+</head>
+<body>
+<canvas id="matrixCanvas"></canvas>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('matrixCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width, height;
+        let dpr = 1;
+        let columns;
+        let drops = [];
+
+        const chars = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()_+[]{};:<>?";
+        const charsArray = chars.split('');
+
+        const BRIGHT_GREEN = "#0f0";
+        const DARK_GREEN = "#0a4a0a";
+        const GLOW_GREEN = "#8aff8a";
+
+        let fontSize = 18;
+        let columnWidth;
+
+        let lastTimestamp = 0;
+        let frameInterval = 1000 / 45;
+
+        class RainDrop {
+            constructor(x, speed) {
+                this.x = x;
+                this.y = Math.random() * -height;
+                this.speed = speed;
+                this.chars = [];
+                this.length = Math.floor(Math.random() * 22) + 12;
+                this.updateInterval = Math.floor(Math.random() * 3) + 1;
+                this.frameCounter = 0;
+                this.initChars();
+            }
+
+            initChars() {
+                for (let i = 0; i < this.length; i++) {
+                    this.chars.push({
+                        char: this.getRandomChar(),
+                        bright: (i === 0)
+                    });
+                }
+            }
+
+            getRandomChar() {
+                return charsArray[Math.floor(Math.random() * charsArray.length)];
+            }
+
+            update() {
+                this.frameCounter++;
+                if (this.frameCounter >= this.updateInterval) {
+                    this.frameCounter = 0;
+                    this.y += this.speed;
+                    for (let i = 0; i < this.chars.length; i++) {
+                        if (Math.random() < 0.12) {
+                            this.chars[i].char = this.getRandomChar();
+                        }
+                    }
+                    if (this.chars.length > 0 && Math.random() < 0.3) {
+                        this.chars[0].char = this.getRandomChar();
+                    }
+                }
+                if (this.y > height + (this.length * fontSize)) {
+                    this.y = -Math.random() * height * 0.5;
+                    this.speed = Math.random() * 4.5 + 2.2;
+                    this.length = Math.floor(Math.random() * 26) + 10;
+                    this.chars = [];
+                    this.initChars();
+                }
+            }
+
+            draw() {
+                for (let i = 0; i < this.chars.length; i++) {
+                    const charObj = this.chars[i];
+                    const yPos = this.y + (i * fontSize);
+                    if (yPos > 0 && yPos < height + fontSize) {
+                        let alpha = 1.0;
+                        let color;
+                        if (i === 0) {
+                            color = GLOW_GREEN;
+                            alpha = 1;
+                        } else if (i < 4) {
+                            color = BRIGHT_GREEN;
+                            alpha = 0.9 - (i * 0.05);
+                        } else {
+                            let fade = 1 - ((i - 4) / (this.chars.length - 4)) * 0.85;
+                            alpha = Math.max(0.2, fade);
+                            color = DARK_GREEN;
+                        }
+                        ctx.fillStyle = color;
+                        ctx.shadowBlur = i === 0 ? 12 : 4;
+                        ctx.shadowColor = "#0f0";
+                        ctx.fillText(charObj.char, this.x, yPos);
+                    }
+                }
+            }
+        }
+
+        function resizeCanvas() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            dpr = Math.max(1, window.devicePixelRatio || 1);
+            canvas.width = Math.max(1, Math.floor(width * dpr));
+            canvas.height = Math.max(1, Math.floor(height * dpr));
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            fontSize = Math.max(16, Math.min(28, Math.floor(width / 55)));
+            ctx.font = `${fontSize}px "Courier New", monospace`;
+            ctx.textBaseline = "top";
+
+            columnWidth = fontSize * 0.9;
+            columns = Math.floor(width / columnWidth);
+
+            drops = [];
+            for (let i = 0; i < columns; i++) {
+                const x = i * columnWidth + (columnWidth / 3);
+                const speed = Math.random() * 4 + 1.8;
+                const drop = new RainDrop(x, speed);
+                drop.y = Math.random() * -height;
+                drops.push(drop);
+            }
+        }
+
+        function drawBackground() {
+            const gradient = ctx.createLinearGradient(0, 0, 0, height);
+            gradient.addColorStop(0, "#001000");
+            gradient.addColorStop(1, "#000000");
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = "#000000";
+            ctx.fillRect(0, height - 40, width, 40);
+        }
+
+        let glitchTimer = 0;
+        function drawGlitch() {
+            glitchTimer++;
+            if (glitchTimer > 180 && Math.random() < 0.02) {
+                ctx.fillStyle = `rgba(0, 255, 0, 0.08)`;
+                ctx.fillRect(0, 0, width, height);
+                if (Math.random() < 0.5) {
+                    ctx.fillStyle = `rgba(0, 200, 0, 0.15)`;
+                    ctx.fillRect(Math.random() * width, 0, 8 + Math.random() * 20, height);
+                }
+                glitchTimer = 0;
+            }
+        }
+
+        let lastFrameTime = 0;
+        let frameDelay = 1000 / 50;
+
+        function animate(currentTime) {
+            requestAnimationFrame(animate);
+
+            if (!lastFrameTime) {
+                lastFrameTime = currentTime;
+                return;
+            }
+            const delta = currentTime - lastFrameTime;
+            if (delta < frameDelay) return;
+
+            lastFrameTime = currentTime;
+
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            drawBackground();
+
+            for (let drop of drops) {
+                drop.update();
+                drop.draw();
+            }
+
+            ctx.fillStyle = DARK_GREEN;
+            ctx.shadowBlur = 2;
+            for (let i = 0; i < 60; i++) {
+                if (Math.random() < 0.3) {
+                    const randX = Math.random() * width;
+                    const randY = Math.random() * height;
+                    const randChar = charsArray[Math.floor(Math.random() * charsArray.length)];
+                    ctx.fillStyle = `rgba(0, 180, 0, ${Math.random() * 0.4})`;
+                    ctx.fillText(randChar, randX, randY);
+                }
+            }
+
+            drawGlitch();
+
+            ctx.shadowBlur = 0;
+        }
+
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+        });
+
+        resizeCanvas();
+        requestAnimationFrame(animate);
+    })();
+</script>
+</body>
+</html>

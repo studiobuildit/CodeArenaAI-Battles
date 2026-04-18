@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wireframe Cube 3D</title>
+    <style>
+        html, body {
+            margin: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: black;
+        }
+        canvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        const W = 540;
+        const H = 960;
+        
+        const vertices = [
+            [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
+            [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]
+        ];
+        
+        const edges = [
+            [0, 1], [1, 2], [2, 3], [3, 0],
+            [4, 5], [5, 6], [6, 7], [7, 4],
+            [0, 4], [1, 5], [2, 6], [3, 7]
+        ];
+        
+        let rotX = 0;
+        let rotY = 0;
+        let rotZ = 0;
+        
+        const trailLength = 20;
+        let trail = [];
+        
+        function init() {
+            resize();
+            window.addEventListener('resize', resize);
+            requestAnimationFrame(animate);
+        }
+        
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = window.innerWidth * dpr;
+            canvas.height = window.innerHeight * dpr;
+        }
+        
+        function project(vertex, distance = 3) {
+            const [x, y, z] = vertex;
+            const scale = distance / (distance + z);
+            return [
+                x * scale * 120 + W / 2,
+                y * scale * 120 + H / 2
+            ];
+        }
+        
+        function rotate(vertex, x, y, z) {
+            let [vx, vy, vz] = vertex;
+            
+            const cosX = Math.cos(x);
+            const sinX = Math.sin(x);
+            [vy, vz] = [vy * cosX - vz * sinX, vy * sinX + vz * cosX];
+            
+            const cosY = Math.cos(y);
+            const sinY = Math.sin(y);
+            [vx, vz] = [vx * cosY + vz * sinY, -vx * sinY + vz * cosY];
+            
+            const cosZ = Math.cos(z);
+            const sinZ = Math.sin(z);
+            [vx, vy] = [vx * cosZ - vy * sinZ, vx * sinZ + vy * cosZ];
+            
+            return [vx, vy, vz];
+        }
+        
+        function drawCube(ctx, time) {
+            rotX += 0.015;
+            rotY += 0.02;
+            rotZ += 0.01;
+            
+            const currentVerts = vertices.map(v => {
+                const rotated = rotate(v, rotX, rotY, rotZ);
+                return project(rotated);
+            });
+            
+            trail.push(currentVerts);
+            if (trail.length > trailLength) trail.shift();
+            
+            trail.forEach((frame, frameIndex) => {
+                const alpha = (frameIndex + 1) / trail.length;
+                ctx.strokeStyle = `rgba(0, 255, 100, ${alpha * 0.3})`;
+                ctx.lineWidth = 1;
+                
+                edges.forEach(edge => {
+                    const [a, b] = edge;
+                    const [x1, y1] = frame[a];
+                    const [x2, y2] = frame[b];
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.stroke();
+                });
+            });
+            
+            ctx.strokeStyle = '#00ff41';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#00ff41';
+            ctx.shadowBlur = 15;
+            
+            const projectedVerts = vertices.map(v => {
+                const rotated = rotate(v, rotX, rotY, rotZ);
+                return project(rotated);
+            });
+            
+            edges.forEach(edge => {
+                const [a, b] = edge;
+                const [x1, y1] = projectedVerts[a];
+                const [x2, y2] = projectedVerts[b];
+                
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            });
+            
+            ctx.shadowBlur = 0;
+        }
+        
+        function drawBackground() {
+            const gradient = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H));
+            gradient.addColorStop(0, '#050505');
+            gradient.addColorStop(0.5, '#0a0a0a');
+            gradient.addColorStop(1, '#000000');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, W, H);
+        }
+        
+        function animate(time) {
+            const dpr = window.devicePixelRatio || 1;
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+            
+            ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+            
+            drawBackground();
+            drawCube(ctx, time);
+            
+            requestAnimationFrame(animate);
+        }
+        
+        init();
+    </script>
+</body>
+</html>

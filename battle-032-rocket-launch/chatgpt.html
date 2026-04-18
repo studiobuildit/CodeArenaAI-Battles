@@ -1,0 +1,26 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rocket Launch</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}body{display:flex;align-items:center;justify-content:center}canvas{display:block}</style></head><body><canvas id="c"></canvas><script>
+(()=>{const W=540,H=960,c=document.getElementById("c"),x=c.getContext("2d"),TA=Math.PI*2,r=(a,b)=>a+Math.random()*(b-a);let d=1,s=1;function rs(){const vw=innerWidth,vh=innerHeight;s=Math.min(vw/W,vh/H);const cw=W*s,ch=H*s;d=Math.max(1,Math.min(3,devicePixelRatio||1));c.style.width=cw+"px";c.style.height=ch+"px";c.width=cw*d;c.height=ch*d;x.setTransform(d*s,0,0,d*s,0,0)}addEventListener("resize",rs,{passive:true});rs();
+let t=0,sm=[],sp=[],st=[],bo=[{x:-22,y:35,a:true,vx:0,vy:0},{x:22,y:35,a:true,vx:0,vy:0}],alt=0,phase="count",cd=5,ct=60,sep=false;
+for(let i=0;i<140;i++)st.push({x:r(0,W),y:r(0,H),s:r(.6,2),a:r(.2,1)});
+const rk={x:W/2,y:720,vy:0,th:0,scroll:0};
+function smoke(n){for(let i=0;i<n;i++)sm.push({x:rk.x+r(-40,40),y:rk.y+65+r(-8,8),vx:r(-1.8,1.8),vy:r(.5,2.4),r:r(10,24),l:r(30,80)})}
+function spark(n){for(let i=0;i<n;i++)sp.push({x:rk.x+r(-12,12),y:rk.y+64,vx:r(-2,2),vy:r(2,8),s:r(2,4),l:r(18,35)})}
+function up(){t++;if(phase==="count"){ct--;if(ct<=0){cd--;ct=60;if(cd<0){phase="lift";rk.th=1}}if(cd<=2)smoke(3)}
+else if(phase==="lift"){rk.vy=Math.min(rk.vy+0.04,4.5);rk.scroll+=rk.vy;alt=Math.min(1,rk.scroll/2000);rk.y=720-rk.scroll;smoke(5);spark(4);if(alt>.6&&!sep){sep=true;bo[0].a=false;bo[1].a=false;bo[0].vx=-2;bo[1].vx=2;bo[0].vy=1;bo[1].vy=1;phase="sep"}if(alt>=1){phase="space"}}
+else if(phase==="sep"){rk.vy=Math.min(rk.vy+.02,6);rk.scroll+=rk.vy;alt=Math.min(1,rk.scroll/2000);rk.y=720-rk.scroll;smoke(4);spark(3);if(alt>=1)phase="space"}
+else if(phase==="space"){rk.scroll+=3;rk.y=720-rk.scroll;alt=1;spark(2);if(t%300===0){phase="reset"}}
+else if(phase==="reset"){if(t%60===0){phase="count";cd=5;ct=60;rk.y=720;rk.vy=0;rk.scroll=0;alt=0;sep=false;bo=[{x:-22,y:35,a:true,vx:0,vy:0},{x:22,y:35,a:true,vx:0,vy:0}];sm=[];sp=[]}}
+for(const b of bo)if(!b.a){b.x+=b.vx;b.y+=b.vy;b.vy+=.08}
+for(let i=sm.length-1;i>=0;i--){const p=sm[i];p.x+=p.vx;p.y+=p.vy;p.r+=.2;p.l--;if(p.l<=0)sm.splice(i,1)}
+for(let i=sp.length-1;i>=0;i--){const p=sp[i];p.x+=p.vx;p.y+=p.vy;p.vy+=.08;p.l--;if(p.l<=0)sp.splice(i,1)}}
+function dr(){const g=x.createLinearGradient(0,0,0,H),a=alt;g.addColorStop(0,`rgb(${Math.floor(20*(1-a))},${Math.floor(120*(1-a))},${Math.floor(255*(1-a)+20*a)})`);g.addColorStop(.6,`rgb(${Math.floor(60*(1-a))},${Math.floor(90*(1-a))},${Math.floor(160*(1-a))})`);g.addColorStop(1,"#000");x.fillStyle=g;x.fillRect(0,0,W,H);if(a>.2){for(const s of st){x.globalAlpha=(a-.2)*1.2*s.a;x.fillStyle="#fff";x.fillRect(s.x,s.y,s.s,s.s)}x.globalAlpha=1}
+if(a<.35){x.fillStyle="#111";x.fillRect(0,790,W,170);x.fillStyle="#222";x.fillRect(140,735,260,55)}
+for(const p of sm){x.globalAlpha=p.l/80;x.fillStyle="rgba(180,180,180,.35)";x.beginPath();x.arc(p.x,p.y,p.r,0,TA);x.fill()}x.globalAlpha=1;
+for(const p of sp){x.globalAlpha=p.l/35;x.fillStyle="#ffb000";x.fillRect(p.x,p.y,p.s,p.s*2)}x.globalAlpha=1;
+for(const b of bo){if(b.a||b.y<1000){x.fillStyle="#d9d9d9";x.fillRect(rk.x+b.x-10,rk.y+b.y-24,20,52)}}
+if(rk.y>-200){if(phase!=="count"){const flame=26+Math.sin(t*.6)*8+Math.min(1,a)*18,lg=x.createLinearGradient(0,rk.y+54,0,rk.y+90+flame);lg.addColorStop(0,"#fff7a0");lg.addColorStop(.35,"#ffb000");lg.addColorStop(1,"rgba(255,60,0,0)");x.fillStyle=lg;x.beginPath();x.moveTo(rk.x-12,rk.y+54);x.quadraticCurveTo(rk.x,rk.y+85+flame,rk.x+12,rk.y+54);x.fill()}
+x.fillStyle="#f0f0f0";x.fillRect(rk.x-16,rk.y-34,32,88);x.fillStyle="#ff3b3b";x.beginPath();x.moveTo(rk.x-16,rk.y-34);x.lineTo(rk.x,rk.y-58);x.lineTo(rk.x+16,rk.y-34);x.fill();x.fillStyle="#2d6cff";x.fillRect(rk.x-7,rk.y-8,14,18)}
+if(phase==="count"){x.fillStyle="#fff";x.font="bold 72px Arial";x.textAlign="center";x.fillText(cd>0?cd:"0",W/2,180);x.font="22px Arial";x.fillStyle="#8cf";x.fillText("COUNTDOWN",W/2,220);x.textAlign="start"}
+if(phase==="lift"&&t%240<45){x.fillStyle="#ffd54a";x.font="bold 52px Arial";x.textAlign="center";x.fillText("LIFTOFF!",W/2,180);x.textAlign="start"}}
+function lp(){up();dr();requestAnimationFrame(lp)}lp()})();
+</script></body></html>

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Winter Snow Scene</title>
+    <style>
+        html, body {
+            margin: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: black;
+        }
+        canvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        const W = 540;
+        const H = 960;
+        
+        let snowGround = [];
+        const groundResolution = 2;
+        
+        const snowflakes = [];
+        const numSnowflakes = 400;
+        
+        const trees = [
+            { x: 80, y: 750, scale: 1.2 },
+            { x: 200, y: 780, scale: 0.9 },
+            { x: 350, y: 760, scale: 1.0 },
+            { x: 480, y: 770, scale: 0.8 },
+            { x: 120, y: 820, scale: 0.6 },
+            { x: 420, y: 830, scale: 0.7 }
+        ];
+        
+        let wind = 0;
+        let windTime = 0;
+        
+        function init() {
+            const segments = Math.ceil(W / groundResolution);
+            snowGround = new Array(segments).fill(0);
+            
+            for (let i = 0; i < numSnowflakes; i++) {
+                snowflakes.push({
+                    x: Math.random() * W,
+                    y: Math.random() * H,
+                    size: Math.random() * 3 + 1,
+                    speed: Math.random() * 1.5 + 0.5,
+                    drift: Math.random() * 0.5 - 0.25,
+                    opacity: Math.random() * 0.5 + 0.3
+                });
+            }
+            
+            resize();
+            window.addEventListener('resize', resize);
+            requestAnimationFrame(animate);
+        }
+        
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = window.innerWidth * dpr;
+            canvas.height = window.innerHeight * dpr;
+        }
+        
+        function drawSky() {
+            const gradient = ctx.createLinearGradient(0, 0, 0, H);
+            gradient.addColorStop(0, '#0a1628');
+            gradient.addColorStop(0.3, '#1a2b4a');
+            gradient.addColorStop(0.6, '#2a3d5c');
+            gradient.addColorStop(1, '#3d5a73');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, W, H);
+            
+            const moonX = W * 0.75;
+            const moonY = H * 0.15;
+            
+            const moonGlow = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, 120);
+            moonGlow.addColorStop(0, 'rgba(200, 220, 255, 0.3)');
+            moonGlow.addColorStop(0.5, 'rgba(180, 200, 255, 0.1)');
+            moonGlow.addColorStop(1, 'rgba(180, 200, 255, 0)');
+            ctx.fillStyle = moonGlow;
+            ctx.fillRect(moonX - 120, moonY - 120, 240, 240);
+            
+            ctx.beginPath();
+            ctx.arc(moonX, moonY, 25, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(220, 235, 255, 0.9)';
+            ctx.fill();
+        }
+        
+        function drawPineTree(x, y, scale) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(-8, 0, 16, 40);
+            
+            const layers = [
+                { y: -20, w: 70, h: 50 },
+                { y: -50, w: 60, h: 45 },
+                { y: -75, w: 50, h: 40 },
+                { y: -95, w: 35, h: 35 }
+            ];
+            
+            ctx.fillStyle = '#0f1f2e';
+            
+            layers.forEach(layer => {
+                ctx.beginPath();
+                ctx.moveTo(0, layer.y - layer.h);
+                ctx.lineTo(-layer.w / 2, layer.y);
+                ctx.lineTo(layer.w / 2, layer.y);
+                ctx.closePath();
+                ctx.fill();
+            });
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            layers.forEach(layer => {
+                ctx.beginPath();
+                ctx.moveTo(0, layer.y - layer.h + 5);
+                ctx.lineTo(-layer.w / 2 + 3, layer.y - 3);
+                ctx.lineTo(layer.w / 2 - 3, layer.y - 3);
+                ctx.closePath();
+                ctx.fill();
+            });
+            
+            ctx.restore();
+        }
+        
+        function drawGround() {
+            const segments = snowGround.length;
+            
+            ctx.fillStyle = '#1a2634';
+            ctx.fillRect(0, H - 100, W, 100);
+            
+            ctx.fillStyle = '#e8f4f8';
+            ctx.beginPath();
+            ctx.moveTo(0, H);
+            
+            for (let i = 0; i < segments; i++) {
+                const x = i * groundResolution;
+                const y = H - 80 - snowGround[i];
+                ctx.lineTo(x, y);
+            }
+            
+            ctx.lineTo(W, H);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < segments - 1; i++) {
+                const x = i * groundResolution;
+                const y = H - 80 - snowGround[i];
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+        
+        function updateSnow() {
+            const segments = snowGround.length;
+            
+            snowflakes.forEach(flake => {
+                flake.y += flake.speed;
+                flake.x += flake.drift + wind;
+                
+                if (flake.x > W + 10) flake.x = -10;
+                if (flake.x < -10) flake.x = W + 10;
+                
+                const groundIndex = Math.floor(flake.x / groundResolution);
+                if (groundIndex >= 0 && groundIndex < segments) {
+                    const groundHeight = snowGround[groundIndex];
+                    const groundY = H - 80 - groundHeight;
+                    
+                    if (flake.y >= groundY - 5) {
+                        if (Math.random() < 0.3) {
+                            snowGround[groundIndex] = Math.min(snowGround[groundIndex] + 0.2, 60);
+                            if (groundIndex > 0) snowGround[groundIndex - 1] = Math.min(snowGround[groundIndex - 1] + 0.05, 60);
+                            if (groundIndex < segments - 1) snowGround[groundIndex + 1] = Math.min(snowGround[groundIndex + 1] + 0.05, 60);
+                        }
+                        flake.y = -10;
+                        flake.x = Math.random() * W;
+                    }
+                }
+                
+                if (flake.y > H + 10) {
+                    flake.y = -10;
+                    flake.x = Math.random() * W;
+                }
+            });
+            
+            for (let i = 1; i < segments - 1; i++) {
+                const avg = (snowGround[i - 1] + snowGround[i] + snowGround[i + 1]) / 3;
+                snowGround[i] = snowGround[i] * 0.98 + avg * 0.02;
+            }
+        }
+        
+        function drawSnow() {
+            snowflakes.forEach(flake => {
+                ctx.beginPath();
+                ctx.arc(flake.x, flake.y, flake.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${flake.opacity})`;
+                ctx.fill();
+            });
+        }
+        
+        function animate() {
+            const dpr = window.devicePixelRatio || 1;
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+            
+            ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+            
+            windTime += 0.01;
+            wind = Math.sin(windTime) * 0.3 + Math.sin(windTime * 0.3) * 0.2;
+            
+            ctx.clearRect(0, 0, W, H);
+            
+            drawSky();
+            
+            trees.forEach(tree => {
+                drawPineTree(tree.x, tree.y, tree.scale);
+            });
+            
+            drawGround();
+            updateSnow();
+            drawSnow();
+            
+            requestAnimationFrame(animate);
+        }
+        
+        init();
+    </script>
+</body>
+</html>

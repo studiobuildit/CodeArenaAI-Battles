@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aurora Borealis 540x960</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="auroraCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('auroraCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+
+        const stars = [];
+        for (let i = 0; i < 150; i++) {
+            stars.push({
+                x: Math.random() * W,
+                y: Math.random() * (H * 0.7),
+                size: Math.random() * 1.5,
+                twinkle: Math.random() * Math.PI
+            });
+        }
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            const vpw = window.innerWidth;
+            const vph = window.innerHeight;
+
+            canvas.width = vpw * dpr;
+            canvas.height = vph * dpr;
+
+            const scale = Math.min(vpw / W, vph / H);
+            const offsetX = (vpw - W * scale) / 2 * dpr;
+            const offsetY = (vph - H * scale) / 2 * dpr;
+
+            ctx.setTransform(scale * dpr, 0, 0, scale * dpr, offsetX, offsetY);
+        }
+
+        function drawMountains() {
+            ctx.fillStyle = '#050505';
+            ctx.beginPath();
+            ctx.moveTo(0, H);
+            ctx.lineTo(0, H * 0.85);
+            ctx.lineTo(W * 0.2, H * 0.78);
+            ctx.lineTo(W * 0.4, H * 0.88);
+            ctx.lineTo(W * 0.7, H * 0.75);
+            ctx.lineTo(W, H * 0.9);
+            ctx.lineTo(W, H);
+            ctx.fill();
+        }
+
+        function drawStars(time) {
+            ctx.fillStyle = "white";
+            stars.forEach(s => {
+                const opacity = 0.3 + Math.abs(Math.sin(time + s.twinkle)) * 0.7;
+                ctx.globalAlpha = opacity;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1.0;
+        }
+
+        function drawAurora(time, hue, offset, baseY) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            
+            for (let i = 0; i < W; i += 2) {
+                const wave = Math.sin(i * 0.01 + time + offset) * 40 + 
+                             Math.sin(i * 0.005 - time * 0.5) * 30;
+                
+                const x = i;
+                const yBottom = baseY + wave;
+                const curtainHeight = 300 + Math.sin(i * 0.02 + time) * 50;
+
+                const grad = ctx.createLinearGradient(x, yBottom, x, yBottom - curtainHeight);
+                grad.addColorStop(0, `hsla(${hue}, 80%, 50%, 0)`);
+                grad.addColorStop(0.2, `hsla(${hue}, 90%, 50%, 0.4)`);
+                grad.addColorStop(0.5, `hsla(${hue + 40}, 80%, 40%, 0.2)`);
+                grad.addColorStop(1, `hsla(${hue + 80}, 80%, 30%, 0)`);
+
+                ctx.fillStyle = grad;
+                ctx.fillRect(x, yBottom - curtainHeight, 2.5, curtainHeight);
+            }
+            ctx.restore();
+        }
+
+        function animate(timestamp) {
+            const time = timestamp * 0.001;
+            ctx.fillStyle = '#01050a';
+            ctx.fillRect(0, 0, W, H);
+
+            drawStars(time);
+            drawAurora(time * 0.5, 120, 0, H * 0.5);
+            drawAurora(time * 0.7, 280, 5, H * 0.45);
+            drawAurora(time * 0.4, 140, 10, H * 0.55);
+            drawMountains();
+
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        requestAnimationFrame(animate);
+    </script>
+</body>
+</html>

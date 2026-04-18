@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Night Campfire | Glowing Embers & Smoke</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000000;
+            margin: 0;
+            padding: 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            background: black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="campfireCanvas"></canvas>
+
+    <script>
+        (function() {
+            const LOGICAL_W = 540;
+            const LOGICAL_H = 960;
+            
+            const FIRE_BASE_X = LOGICAL_W / 2;
+            const FIRE_BASE_Y = LOGICAL_H - 140;
+            
+            const MAX_FLAMES = 45;
+            let flames = [];
+            const MAX_EMBERS = 80;
+            let embers = [];
+            const MAX_SMOKE = 35;
+            let smokeParticles = [];
+            const STAR_COUNT = 140;
+            let stars = [];
+            
+            let lastTimestamp = 0;
+            let globalTime = 0;
+            
+            function randomRange(min, max) {
+                return min + Math.random() * (max - min);
+            }
+            
+            function initFlames() {
+                for (let i = 0; i < MAX_FLAMES; i++) {
+                    flames.push({
+                        x: FIRE_BASE_X + (Math.random() - 0.5) * 45,
+                        y: FIRE_BASE_Y - 15 + Math.random() * 20,
+                        size: 8 + Math.random() * 16,
+                        speedX: (Math.random() - 0.5) * 22,
+                        speedY: -35 - Math.random() * 45,
+                        life: 0.3 + Math.random() * 0.7,
+                        maxLife: 0.8 + Math.random() * 0.6,
+                        flickerPhase: Math.random() * Math.PI * 2,
+                        hue: 25 + Math.random() * 25,
+                        alpha: 0.7 + Math.random() * 0.3
+                    });
+                }
+            }
+            
+            function initEmbers() {
+                for (let i = 0; i < MAX_EMBERS; i++) {
+                    embers.push({
+                        x: FIRE_BASE_X + (Math.random() - 0.5) * 55,
+                        y: FIRE_BASE_Y - 10 + Math.random() * 35,
+                        size: 2 + Math.random() * 5,
+                        speedX: (Math.random() - 0.5) * 18,
+                        speedY: -20 - Math.random() * 55,
+                        life: 0.2 + Math.random() * 0.8,
+                        maxLife: 1.0 + Math.random() * 0.8,
+                        hue: 30 + Math.random() * 20,
+                        glow: true
+                    });
+                }
+            }
+            
+            function initSmoke() {
+                for (let i = 0; i < MAX_SMOKE; i++) {
+                    smokeParticles.push({
+                        x: FIRE_BASE_X + (Math.random() - 0.5) * 40,
+                        y: FIRE_BASE_Y - 40 + Math.random() * 60,
+                        size: 10 + Math.random() * 25,
+                        speedX: (Math.random() - 0.5) * 9,
+                        speedY: -12 - Math.random() * 22,
+                        life: 0.3 + Math.random() * 0.7,
+                        maxLife: 1.6 + Math.random() * 1.2,
+                        alpha: 0.2 + Math.random() * 0.35,
+                        driftPhase: Math.random() * Math.PI * 2
+                    });
+                }
+            }
+            
+            function initStars() {
+                for (let i = 0; i < STAR_COUNT; i++) {
+                    stars.push({
+                        x: Math.random() * LOGICAL_W,
+                        y: Math.random() * (LOGICAL_H * 0.65),
+                        radius: 1 + Math.random() * 2.2,
+                        twinkleSpeed: 0.5 + Math.random() * 2,
+                        phase: Math.random() * Math.PI * 2,
+                        alpha: 0.4 + Math.random() * 0.6
+                    });
+                }
+            }
+            
+            function updateFlames(deltaSec, time) {
+                for (let i = 0; i < flames.length; i++) {
+                    const f = flames[i];
+                    f.life += deltaSec * 0.8;
+                    if (f.life >= f.maxLife) {
+                        f.x = FIRE_BASE_X + (Math.random() - 0.5) * 48;
+                        f.y = FIRE_BASE_Y - 12 + Math.random() * 25;
+                        f.speedX = (Math.random() - 0.5) * 24;
+                        f.speedY = -38 - Math.random() * 48;
+                        f.life = 0;
+                        f.maxLife = 0.7 + Math.random() * 0.7;
+                        f.size = 7 + Math.random() * 18;
+                        f.hue = 22 + Math.random() * 28;
+                        f.alpha = 0.65 + Math.random() * 0.35;
+                    }
+                    
+                    f.x += f.speedX * deltaSec;
+                    f.y += f.speedY * deltaSec;
+                    f.speedX += (Math.sin(time * 8 + f.flickerPhase) * 12) * deltaSec;
+                    f.speedY += (Math.cos(time * 6) * 6) * deltaSec;
+                    f.speedX *= (1 - deltaSec * 1.2);
+                    f.speedY *= (1 - deltaSec * 0.6);
+                    
+                    if (f.y < LOGICAL_H * 0.2 || f.x < -50 || f.x > LOGICAL_W + 50) {
+                        f.life = f.maxLife;
+                    }
+                    
+                    const lifeFactor = 1 - (f.life / f.maxLife);
+                    f.currentAlpha = f.alpha * lifeFactor * 0.9;
+                }
+            }
+            
+            function updateEmbers(deltaSec) {
+                for (let i = 0; i < embers.length; i++) {
+                    const e = embers[i];
+                    e.life += deltaSec * 0.7;
+                    if (e.life >= e.maxLife) {
+                        e.x = FIRE_BASE_X + (Math.random() - 0.5) * 60;
+                        e.y = FIRE_BASE_Y - 8 + Math.random() * 30;
+                        e.speedX = (Math.random() - 0.5) * 20;
+                        e.speedY = -25 - Math.random() * 65;
+                        e.life = 0;
+                        e.maxLife = 0.8 + Math.random() * 1.0;
+                        e.size = 2 + Math.random() * 5.5;
+                        e.hue = 28 + Math.random() * 22;
+                    }
+                    
+                    e.x += e.speedX * deltaSec;
+                    e.y += e.speedY * deltaSec;
+                    e.speedY += 18 * deltaSec;
+                    e.speedX *= (1 - deltaSec * 0.5);
+                    const lifeFactor = 1 - (e.life / e.maxLife);
+                    e.currentAlpha = Math.min(0.9, lifeFactor * 0.9);
+                    e.currentSize = e.size * (0.5 + lifeFactor * 0.8);
+                    
+                    if (e.y < LOGICAL_H * 0.1 || e.x < -40 || e.x > LOGICAL_W + 40) {
+                        e.life = e.maxLife;
+                    }
+                }
+            }
+            
+            function updateSmoke(deltaSec, time) {
+                for (let i = 0; i < smokeParticles.length; i++) {
+                    const s = smokeParticles[i];
+                    s.life += deltaSec * 0.35;
+                    if (s.life >= s.maxLife) {
+                        s.x = FIRE_BASE_X + (Math.random() - 0.5) * 45;
+                        s.y = FIRE_BASE_Y - 25 + Math.random() * 50;
+                        s.speedX = (Math.random() - 0.5) * 12;
+                        s.speedY = -10 - Math.random() * 28;
+                        s.life = 0;
+                        s.maxLife = 1.4 + Math.random() * 1.4;
+                        s.size = 12 + Math.random() * 28;
+                        s.alpha = 0.2 + Math.random() * 0.4;
+                    }
+                    
+                    s.x += s.speedX * deltaSec + Math.sin(time * 1.2 + s.driftPhase) * 3 * deltaSec;
+                    s.y += s.speedY * deltaSec;
+                    const lifeFactor = 1 - (s.life / s.maxLife);
+                    s.currentSize = s.size * (0.7 + lifeFactor * 1.2);
+                    s.currentAlpha = s.alpha * lifeFactor * 0.7;
+                    
+                    if (s.y < LOGICAL_H * 0.05 || s.x < -80 || s.x > LOGICAL_W + 80) {
+                        s.life = s.maxLife;
+                    }
+                }
+            }
+            
+            function drawStars(ctx, time) {
+                for (let s of stars) {
+                    const twinkle = 0.5 + Math.sin(time * s.twinkleSpeed + s.phase) * 0.5;
+                    const alpha = s.alpha * (0.5 + twinkle * 0.5);
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 240, 200, ${alpha * 0.9})`;
+                    ctx.fill();
+                    if (s.radius > 1.5) {
+                        ctx.beginPath();
+                        ctx.arc(s.x, s.y, s.radius * 1.6, 0, Math.PI * 2);
+                        ctx.fillStyle = `rgba(255, 210, 150, ${alpha * 0.25})`;
+                        ctx.fill();
+                    }
+                }
+            }
+            
+            function drawBackgroundForest(ctx) {
+                ctx.fillStyle = "#0a1208";
+                ctx.fillRect(0, LOGICAL_H * 0.7, LOGICAL_W, LOGICAL_H * 0.3);
+                ctx.fillStyle = "#0c1a0c";
+                for (let i = 0; i < 18; i++) {
+                    const treeX = i * 38 + 15;
+                    const treeH = 50 + Math.sin(i) * 18;
+                    ctx.beginPath();
+                    ctx.moveTo(treeX, LOGICAL_H * 0.7);
+                    ctx.lineTo(treeX - 12, LOGICAL_H * 0.7 - treeH * 0.6);
+                    ctx.lineTo(treeX - 5, LOGICAL_H * 0.7 - treeH);
+                    ctx.lineTo(treeX, LOGICAL_H * 0.7 - treeH * 1.2);
+                    ctx.lineTo(treeX + 5, LOGICAL_H * 0.7 - treeH);
+                    ctx.lineTo(treeX + 12, LOGICAL_H * 0.7 - treeH * 0.6);
+                    ctx.fill();
+                }
+            }
+            
+            function drawLogs(ctx, time) {
+                const groundGlow = ctx.createRadialGradient(FIRE_BASE_X, FIRE_BASE_Y + 15, 10, FIRE_BASE_X, FIRE_BASE_Y + 10, 85);
+                groundGlow.addColorStop(0, "rgba(255, 80, 20, 0.45)");
+                groundGlow.addColorStop(0.7, "rgba(180, 50, 0, 0.2)");
+                groundGlow.addColorStop(1, "rgba(0,0,0,0)");
+                ctx.fillStyle = groundGlow;
+                ctx.fillRect(FIRE_BASE_X - 100, FIRE_BASE_Y - 25, 200, 70);
+                
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = "#4a2e1e";
+                ctx.shadowColor = "rgba(0,0,0,0)";
+                ctx.fillRect(FIRE_BASE_X - 45, FIRE_BASE_Y - 12, 90, 20);
+                ctx.fillStyle = "#5c3a24";
+                ctx.fillRect(FIRE_BASE_X - 38, FIRE_BASE_Y - 8, 76, 14);
+                ctx.save();
+                ctx.translate(FIRE_BASE_X - 18, FIRE_BASE_Y - 5);
+                ctx.rotate(0.4);
+                ctx.fillStyle = "#55301c";
+                ctx.fillRect(-30, -8, 70, 18);
+                ctx.fillStyle = "#6e422a";
+                ctx.fillRect(-28, -5, 66, 12);
+                ctx.restore();
+                ctx.save();
+                ctx.translate(FIRE_BASE_X + 12, FIRE_BASE_Y - 8);
+                ctx.rotate(-0.3);
+                ctx.fillStyle = "#4f2e1a";
+                ctx.fillRect(-28, -7, 65, 16);
+                ctx.fillStyle = "#623b22";
+                ctx.fillRect(-26, -4, 60, 10);
+                ctx.restore();
+                
+                ctx.globalCompositeOperation = "lighter";
+                ctx.fillStyle = `rgba(255, 100, 20, 0.35)`;
+                ctx.fillRect(FIRE_BASE_X - 40, FIRE_BASE_Y - 10, 80, 18);
+                ctx.globalCompositeOperation = "source-over";
+            }
+            
+            function drawFlames(ctx, time) {
+                for (let f of flames) {
+                    const lifeFactor = 1 - (f.life / f.maxLife);
+                    const flicker = 0.7 + Math.sin(time * 18 + f.flickerPhase) * 0.3;
+                    const sizeVar = f.size * (0.6 + lifeFactor * 0.8) * flicker;
+                    const hue = f.hue + Math.sin(time * 20) * 6;
+                    const alpha = f.currentAlpha * (0.5 + flicker * 0.5);
+                    
+                    ctx.beginPath();
+                    ctx.ellipse(f.x, f.y, sizeVar * 0.7, sizeVar, 0, 0, Math.PI * 2);
+                    const gradient = ctx.createRadialGradient(f.x - 2, f.y - 2, 2, f.x, f.y, sizeVar);
+                    gradient.addColorStop(0, `hsla(${hue}, 95%, 65%, ${alpha})`);
+                    gradient.addColorStop(0.7, `hsla(${hue - 8}, 100%, 55%, ${alpha * 0.8})`);
+                    gradient.addColorStop(1, `hsla(${hue - 15}, 90%, 40%, 0)`);
+                    ctx.fillStyle = gradient;
+                    ctx.fill();
+                    
+                    ctx.beginPath();
+                    ctx.ellipse(f.x - 1, f.y - 2, sizeVar * 0.3, sizeVar * 0.5, 0, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 220, 100, ${alpha * 0.9})`;
+                    ctx.fill();
+                }
+            }
+            
+            function drawEmbers(ctx) {
+                for (let e of embers) {
+                    if (e.currentAlpha <= 0.02) continue;
+                    ctx.beginPath();
+                    ctx.arc(e.x, e.y, e.currentSize * 0.8, 0, Math.PI * 2);
+                    ctx.fillStyle = `hsla(${e.hue}, 95%, 65%, ${e.currentAlpha * 0.9})`;
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(e.x, e.y, e.currentSize * 1.4, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255, 100, 30, ${e.currentAlpha * 0.4})`;
+                    ctx.fill();
+                }
+            }
+            
+            function drawSmoke(ctx) {
+                for (let s of smokeParticles) {
+                    if (s.currentAlpha <= 0.02) continue;
+                    ctx.beginPath();
+                    ctx.ellipse(s.x, s.y, s.currentSize * 0.7, s.currentSize * 0.9, 0, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(80, 75, 70, ${s.currentAlpha * 0.55})`;
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.ellipse(s.x - 2, s.y - 2, s.currentSize * 0.9, s.currentSize * 1.1, 0, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(60, 55, 50, ${s.currentAlpha * 0.35})`;
+                    ctx.fill();
+                }
+            }
+            
+            function drawAmbientGlow(ctx, time) {
+                const pulse = 0.7 + Math.sin(time * 5) * 0.2;
+                const glowRadial = ctx.createRadialGradient(FIRE_BASE_X, FIRE_BASE_Y - 15, 20, FIRE_BASE_X, FIRE_BASE_Y - 10, 120);
+                glowRadial.addColorStop(0, `rgba(255, 90, 20, ${0.25 * pulse})`);
+                glowRadial.addColorStop(0.6, `rgba(200, 55, 15, ${0.12 * pulse})`);
+                glowRadial.addColorStop(1, "rgba(0,0,0,0)");
+                ctx.fillStyle = glowRadial;
+                ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+                
+                ctx.fillStyle = `rgba(255, 70, 20, ${0.12 * pulse})`;
+                ctx.fillRect(FIRE_BASE_X - 130, FIRE_BASE_Y - 20, 260, 65);
+            }
+            
+            const canvas = document.getElementById('campfireCanvas');
+            const ctx = canvas.getContext('2d');
+            let scaleX = 1, scaleY = 1;
+            
+            function resizeCanvas() {
+                const drawWidth = window.innerWidth;
+                const drawHeight = window.innerHeight;
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = drawWidth * dpr;
+                canvas.height = drawHeight * dpr;
+                canvas.style.width = `${drawWidth}px`;
+                canvas.style.height = `${drawHeight}px`;
+                scaleX = canvas.width / LOGICAL_W;
+                scaleY = canvas.height / LOGICAL_H;
+            }
+            
+            let previousTime = null;
+            
+            function animate(nowMs) {
+                if (!previousTime) {
+                    previousTime = nowMs;
+                    requestAnimationFrame(animate);
+                    return;
+                }
+                
+                let delta = Math.min(0.033, (nowMs - previousTime) / 1000);
+                if (delta <= 0) {
+                    previousTime = nowMs;
+                    requestAnimationFrame(animate);
+                    return;
+                }
+                
+                globalTime += delta;
+                updateFlames(delta, globalTime);
+                updateEmbers(delta);
+                updateSmoke(delta, globalTime);
+                
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.fillStyle = "#000000";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+                
+                const skyGrad = ctx.createLinearGradient(0, 0, 0, LOGICAL_H * 0.7);
+                skyGrad.addColorStop(0, "#020617");
+                skyGrad.addColorStop(0.6, "#0a1428");
+                skyGrad.addColorStop(1, "#0f1a1a");
+                ctx.fillStyle = skyGrad;
+                ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+                
+                drawStars(ctx, globalTime);
+                drawBackgroundForest(ctx);
+                drawAmbientGlow(ctx, globalTime);
+                drawLogs(ctx, globalTime);
+                drawSmoke(ctx);
+                drawFlames(ctx, globalTime);
+                drawEmbers(ctx);
+                
+                ctx.globalCompositeOperation = "lighter";
+                ctx.fillStyle = `rgba(255, 100, 30, 0.05)`;
+                ctx.fillRect(FIRE_BASE_X - 80, FIRE_BASE_Y - 90, 160, 130);
+                ctx.globalCompositeOperation = "source-over";
+                
+                ctx.fillStyle = `rgba(255, 200, 100, 0.3)`;
+                for (let i = 0; i < 25; i++) {
+                    const angle = globalTime * 1.2 + i;
+                    const fx = FIRE_BASE_X + Math.sin(angle) * 35;
+                    const fy = FIRE_BASE_Y - 50 + Math.cos(angle * 0.7) * 40;
+                    ctx.beginPath();
+                    ctx.arc(fx, fy, 1.2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                previousTime = nowMs;
+                requestAnimationFrame(animate);
+            }
+            
+            function init() {
+                initStars();
+                initFlames();
+                initEmbers();
+                initSmoke();
+                resizeCanvas();
+                window.addEventListener('resize', () => { resizeCanvas(); });
+                window.addEventListener('orientationchange', () => { setTimeout(resizeCanvas, 30); });
+                previousTime = null;
+                requestAnimationFrame(animate);
+            }
+            
+            init();
+        })();
+    </script>
+</body>
+</html>

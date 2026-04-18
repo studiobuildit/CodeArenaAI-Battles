@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Auto Helicopter Rescue | Rising Flood</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: #000000; /* pure black background */
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden; /* no page scroll */
+            margin: 0;
+            padding: 0;
+        }
+
+        /* canvas container: scales while preserving 9:16 ratio */
+        .canvas-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+        }
+
+        canvas {
+            display: block;
+            box-shadow: 0 0 0 2px #1a3f2c; /* subtle border, but still inside canvas only */
+            background: black;
+        }
+    </style>
+</head>
+<body>
+<div class="canvas-wrapper">
+    <canvas id="gameCanvas" width="540" height="960"></canvas>
+</div>
+
+<script>
+    (function() {
+        // ----- FIXED LOGICAL DIMENSIONS (9:16 portrait) -----
+        const LOGIC_W = 540;
+        const LOGIC_H = 960;
+
+        const canvas = document.getElementById('gameCanvas');
+        let ctx = canvas.getContext('2d');
+
+        // ----- GAME STATE (auto-play, no manual control) -----
+        let rescueCount = 0;
+        let waterLevel = 0.25;        // 0 = bottom, 1 = top; starts relatively low (0.25 * height)
+        const MAX_WATER_LEVEL = 0.88;   // water never fully covers rooftops completely (some safe top)
+        const WATER_RISE_RATE = 0.00035; // per frame (approx 0.021 per sec at 60fps)
+        
+        // ----- Helicopter Data -----
+        let heliX = LOGIC_W * 0.7;      // start mid-right
+        const HELI_Y = 85;               // fixed Y near top
+        let heliRotorAngle = 0;
+        const ROTOR_SPEED = 0.35;
+        
+        // Rope lowering & pick up state machine
+        let ropeState = "IDLE";          // IDLE, LOWERING, LIFTING, RETURNING
+        let ropeTargetY = HELI_Y;        // current rope tip Y (logical)
+        let ropeLowerSpeed = 3.2;
+        let ropeLiftSpeed = 3.8;
+        
+        // Person data (stranded people on rooftops)
+        // each building has roof Y coordinate, and a stranded person if not rescued
+        const BUILDINGS = [
+            { roofX: 95, roofY: 720, width: 68, hasPerson: true, personId: 0 },
+            { roofX: 220, roofY: 680, width: 72, hasPerson: true, personId: 1 },
+            { roofX: 360, roofY: 750, width: 65, hasPerson: true, personId: 2 },
+            { roofX: 440, roofY: 690, width: 60, hasPerson: true, personId: 3 }
+        ];
+        
+        // rescued flag for each building
+        let rescuedBuildings = [false, false, false, false];
+        
+        // current target building index (for pickup)
+        let currentTargetIdx = -1;
+        // person carried by rope? if true, person is attached to rope tip
+        let carryingPerson = false;
+        
+        // Return flight to safety zone (left side)
+        let returningToLeft = false;
+        let returnProgress = 0;    // 0..1 from current heliX to safetyX
+        
+        // safety landing zone X (left side building edge)
+        const SAFETY_X = 55;
+        let safetyDropOffActive = false;
+        
+        // ----- Rain & Lightning effects -----
+        let rainDrops = [];
+        const RAIN_COUNT = 220;
+        let lightningActive = false;
+        let lightningTimer = 0;
+        let nextLightningDelay = 0;
+        
+        // Flood water visual data (dynamic)
+        let waterSurfaceY = 0;
+        
+        // ----- frame animation & auto loop -----
+        let animationId = null;
+        let lastTimestamp = 0;
+        
+        // Resize + devicePixelRatio handling (scale canvas)
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            
+            // target aspect 9:16 = 540/960 = 0.5625
+            const targetRatio = LOGIC_W / LOGIC_H; // 0.5625
+            
+            let drawWidth = containerWidth;
+            let drawHeight = containerWidth / targetRatio;
+            
+            if (drawHeight > containerHeight) {
+                drawHeight = containerHeight;
+                drawWidth = containerHeight * targetRatio;
+            }
+            
+            // apply size to canvas element (CSS)
+            canvas.style.width = `${drawWidth}px`;
+            canvas.style.height = `${drawHeight}px`;
+            
+            // actual canvas drawing buffer stays at LOGIC_W x LOGIC_H
+            // reset canvas resolution
+            canvas.width = LOGIC_W;
+            canvas.height = LOGIC_H;
+            
+            // update context after resize
+            ctx = canvas.getContext('2d');
+        }
+        
+        // ----- Helper: update water surface based on waterLevel (0..1) -----
+        function updateWaterSurface() {
+            waterSurfaceY = LOGIC_H - (waterLevel * LOGIC_H);
+        }
+        
+        // ----- Find next available stranded person (closest to heli? but for auto logic we pick first un-rescued left->right ) -----
+        function findNextRescueTarget() {
+            for (let i = 0; i < BUILDINGS.length; i++) {
+                if (!rescuedBuildings[i] && BUILDINGS[i].hasPerson) {
+                    return i;
+                }
+            }
+            return -1; // all rescued
+        }
+        
+        // ----- Start pick up sequence (if idle and person exists) -----
+        function tryStartPickup() {
+            if (ropeState !== "IDLE") return false;
+            if (carryingPerson) return false;
+            const targetIdx = findNextRescueTarget();
+            if (targetIdx === -1) return false;
+            
+            currentTargetIdx = targetIdx;
+            const targetBuilding = BUILDINGS[currentTargetIdx];
+            const targetRoofY = targetBuilding.roofY - 8; // rope tip should reach roof level to grab
+            
+            // start lowering rope from helicopter Y down to roof Y
+            ropeState = "LOWERING";
+            ropeTargetY = HELI_Y;
+            carryingPerson = false;
+            returningToLeft = false;
+            returnProgress = 0;
+            safetyDropOffActive = false;
+            return true;
+        }
+        
+        // ----- Drop off rescued person at safety zone (left) -----
+        function dropOffAtSafety() {
+            if (carryingPerson) {
+                carryingPerson = false;
+                rescueCount++;
+                // mark current target as rescued (but we already rescued when picked up? careful: person removal logic)
+                if (currentTargetIdx !== -1 && !rescuedBuildings[currentTargetIdx]) {
+                    rescuedBuildings[currentTargetIdx] = true;
+                    BUILDINGS[currentTargetIdx].hasPerson = false;
+                }
+                currentTargetIdx = -1;
+            }
+            ropeState = "IDLE";
+            returningToLeft = false;
+            returnProgress = 0;
+            safetyDropOffActive = false;
+            // reset heliX to default cruising right area after drop-off? but for smoothness, keep heli near left after drop? 
+            // we'll reposition heli to right side for next rescue after idle briefly
+            // but we set heliX to 420 after drop, but we need to return to right area: actually we move heli back during RETURN phase? redesign smooth.
+            // Better: after drop off, we force heli to fly back to right zone over 2 seconds via auto movement.
+            // Since game auto-plays, let's add a "cruise back" after dropoff if heli is left.
+            if (heliX < LOGIC_W * 0.5) {
+                // will interpolate back to right
+                returningToLeft = false; // but not left return, we just set targetX = 420
+                // we'll implement simple reposition inside update
+            }
+        }
+        
+        // ----- Update rope lowering/lifting logic & person interaction -----
+        function updateRopeAndPickup() {
+            if (ropeState === "LOWERING") {
+                // rope tip moves down towards target roof
+                if (currentTargetIdx !== -1) {
+                    const targetBuilding = BUILDINGS[currentTargetIdx];
+                    const roofReachY = targetBuilding.roofY - 8; // rope tip touches roof
+                    if (ropeTargetY < roofReachY) {
+                        ropeTargetY += ropeLowerSpeed;
+                        if (ropeTargetY >= roofReachY) {
+                            ropeTargetY = roofReachY;
+                            // reached roof: pick up person
+                            if (!carryingPerson && !rescuedBuildings[currentTargetIdx] && BUILDINGS[currentTargetIdx].hasPerson) {
+                                carryingPerson = true;
+                                // Immediately remove person from roof
+                                BUILDINGS[currentTargetIdx].hasPerson = false;
+                                // start lifting phase
+                                ropeState = "LIFTING";
+                            } else {
+                                // no person? abort
+                                ropeState = "IDLE";
+                                currentTargetIdx = -1;
+                            }
+                        }
+                    } else {
+                        ropeState = "LIFTING";
+                    }
+                } else {
+                    ropeState = "IDLE";
+                }
+            }
+            else if (ropeState === "LIFTING") {
+                // lift person up toward helicopter
+                if (ropeTargetY > HELI_Y + 12) {
+                    ropeTargetY -= ropeLiftSpeed;
+                    if (ropeTargetY <= HELI_Y + 12) {
+                        ropeTargetY = HELI_Y + 12;
+                        // person is now onboard? Actually rope brings person to helicopter, then we start returning to left safety
+                        ropeState = "RETURNING";
+                        returningToLeft = true;
+                        returnProgress = 0;
+                        safetyDropOffActive = false;
+                    }
+                } else {
+                    ropeState = "RETURNING";
+                    returningToLeft = true;
+                }
+            }
+            else if (ropeState === "RETURNING") {
+                // helicopter flies to left safety zone (SAFETY_X ~55)
+                if (!returningToLeft) {
+                    returningToLeft = true;
+                    returnProgress = 0;
+                }
+                // move helicopter from current X to SAFETY_X
+                const startX = heliX;
+                const targetX = SAFETY_X + 20; // hover over safe platform
+                if (returnProgress < 1) {
+                    returnProgress += 0.018;
+                    if (returnProgress >= 1) returnProgress = 1;
+                    heliX = startX + (targetX - startX) * returnProgress;
+                }
+                if (returnProgress >= 0.99) {
+                    // arrived at safety zone
+                    if (!safetyDropOffActive) {
+                        safetyDropOffActive = true;
+                        // drop off person if carrying
+                        if (carryingPerson) {
+                            dropOffAtSafety();
+                        } else {
+                            // edge case: no person, just reset
+                            ropeState = "IDLE";
+                            returningToLeft = false;
+                        }
+                    } else {
+                        // after dropoff, reset and reposition heli back to right
+                        if (ropeState === "RETURNING" && !carryingPerson && rescueCount > 0) {
+                            ropeState = "IDLE";
+                            returningToLeft = false;
+                            // reposition heli to right side gradually (simple interpolation)
+                        }
+                    }
+                }
+                // after dropoff, force transition
+                if (!carryingPerson && safetyDropOffActive && ropeState === "RETURNING") {
+                    ropeState = "IDLE";
+                    returningToLeft = false;
+                    heliX = Math.min(heliX, SAFETY_X + 25);
+                }
+            }
+            // after idle, auto reset to right side if heli too left
+            if (ropeState === "IDLE" && !returningToLeft && heliX < LOGIC_W * 0.55) {
+                // slowly drift back to right zone
+                heliX += 1.2;
+                if (heliX > LOGIC_W * 0.68) heliX = LOGIC_W * 0.68;
+            }
+            // ensure heliX boundaries
+            heliX = Math.min(Math.max(heliX, 30), LOGIC_W - 70);
+        }
+        
+        // ----- Water rising -----
+        function updateWater() {
+            if (waterLevel < MAX_WATER_LEVEL) {
+                waterLevel += WATER_RISE_RATE;
+                if (waterLevel > MAX_WATER_LEVEL) waterLevel = MAX_WATER_LEVEL;
+                updateWaterSurface();
+            }
+            // optional: if water covers roofs and there are still people not rescued, they drown -> game over? but no game over, just sadness.
+            // we still try to rescue until covered. keep auto-play. if building roof below water, person disappears?
+            for (let i = 0; i < BUILDINGS.length; i++) {
+                const b = BUILDINGS[i];
+                if (!rescuedBuildings[i] && b.hasPerson) {
+                    const roofBaseY = b.roofY;
+                    if (waterSurfaceY <= roofBaseY + 15) { // water touches roof
+                        // Person lost to flood :( but we just remove them to avoid endless attempts
+                        if (b.hasPerson) {
+                            b.hasPerson = false;
+                            rescuedBuildings[i] = true; // mark as lost but no counter increase
+                        }
+                    }
+                }
+            }
+        }
+        
+        // ----- Rain initialization -----
+        function initRain() {
+            for (let i = 0; i < RAIN_COUNT; i++) {
+                rainDrops.push({
+                    x: Math.random() * LOGIC_W,
+                    y: Math.random() * LOGIC_H,
+                    len: 8 + Math.random() * 12,
+                    speed: 3 + Math.random() * 6
+                });
+            }
+        }
+        
+        function updateRain() {
+            for (let r of rainDrops) {
+                r.y += r.speed;
+                if (r.y > LOGIC_H) {
+                    r.y = -r.len;
+                    r.x = Math.random() * LOGIC_W;
+                }
+            }
+        }
+        
+        function drawRain() {
+            ctx.save();
+            ctx.globalAlpha = 0.55;
+            ctx.strokeStyle = "#aad4ff";
+            ctx.lineWidth = 1.2;
+            for (let r of rainDrops) {
+                ctx.beginPath();
+                ctx.moveTo(r.x, r.y);
+                ctx.lineTo(r.x - 2, r.y + r.len);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+        
+        // ----- Lightning flashes -----
+        function updateLightning() {
+            if (lightningActive) {
+                lightningTimer--;
+                if (lightningTimer <= 0) {
+                    lightningActive = false;
+                }
+            } else {
+                if (nextLightningDelay <= 0) {
+                    // random chance every frame ~ 1/300 chance per frame (approx 0.3 sec)
+                    if (Math.random() < 0.008) {
+                        lightningActive = true;
+                        lightningTimer = 4; // flash frames
+                        nextLightningDelay = 90 + Math.random() * 180;
+                    }
+                } else {
+                    nextLightningDelay--;
+                }
+            }
+        }
+        
+        function applyLightningEffect(ctx) {
+            if (lightningActive) {
+                ctx.fillStyle = "rgba(255, 245, 210, 0.45)";
+                ctx.fillRect(0, 0, LOGIC_W, LOGIC_H);
+            }
+        }
+        
+        // ----- Drawing functions -----
+        function drawBackgroundAndFlood() {
+            // sky gradient night/stormy
+            const grad = ctx.createLinearGradient(0, 0, 0, LOGIC_H);
+            grad.addColorStop(0, "#0a1f2e");
+            grad.addColorStop(0.7, "#132c3c");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, LOGIC_W, LOGIC_H);
+            
+            // draw flood water (translucent blue)
+            const waterTop = Math.floor(waterSurfaceY);
+            if (waterTop < LOGIC_H) {
+                ctx.fillStyle = "#1c6e8fcc";
+                ctx.fillRect(0, waterTop, LOGIC_W, LOGIC_H - waterTop);
+                ctx.fillStyle = "#2399c4aa";
+                for (let i = 0; i < 40; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, waterTop + Math.sin(Date.now() * 0.002 + i) * 3 + i % 7);
+                    ctx.lineTo(LOGIC_W, waterTop + Math.cos(Date.now() * 0.0025 + i) * 2 + i % 5);
+                    ctx.lineTo(LOGIC_W, waterTop + 8 + i % 4);
+                    ctx.fill();
+                }
+                ctx.fillStyle = "#4fa9d1aa";
+                ctx.fillRect(0, waterTop, LOGIC_W, 4);
+            }
+        }
+        
+        function drawBuildings() {
+            for (let i = 0; i < BUILDINGS.length; i++) {
+                const b = BUILDINGS[i];
+                const buildingHeight = LOGIC_H - b.roofY;
+                // building body
+                ctx.fillStyle = "#4a3b2c";
+                ctx.fillRect(b.roofX, b.roofY, b.width, buildingHeight);
+                ctx.fillStyle = "#6d5c47";
+                ctx.fillRect(b.roofX + 5, b.roofY + 5, b.width - 10, 12);
+                ctx.fillStyle = "#b87c4f";
+                for (let w = 0; w < 3; w++) {
+                    ctx.fillRect(b.roofX + 10 + w * 18, b.roofY - 5, 6, 8);
+                }
+                // windows
+                ctx.fillStyle = "#ffcd94";
+                for (let fl = 0; fl < 3; fl++) {
+                    ctx.fillRect(b.roofX + 12, b.roofY + 35 + fl * 40, 10, 15);
+                    ctx.fillRect(b.roofX + b.width - 22, b.roofY + 35 + fl * 40, 10, 15);
+                }
+                
+                // stranded person if present
+                if (b.hasPerson && !rescuedBuildings[i]) {
+                    ctx.fillStyle = "#ffe0b5";
+                    ctx.beginPath();
+                    ctx.arc(b.roofX + b.width/2, b.roofY - 12, 8, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.fillStyle = "#222";
+                    ctx.fillRect(b.roofX + b.width/2 - 3, b.roofY - 20, 6, 8);
+                    ctx.fillStyle = "white";
+                    ctx.fillRect(b.roofX + b.width/2 - 2, b.roofY - 24, 2, 3);
+                    ctx.fillRect(b.roofX + b.width/2 + 1, b.roofY - 24, 2, 3);
+                    // waving arm animation
+                    let wave = Math.sin(Date.now() * 0.012) * 0.5;
+                    ctx.beginPath();
+                    ctx.moveTo(b.roofX + b.width/2 + 6, b.roofY - 18);
+                    ctx.lineTo(b.roofX + b.width/2 + 12 + wave, b.roofY - 22);
+                    ctx.lineTo(b.roofX + b.width/2 + 8, b.roofY - 15);
+                    ctx.fill();
+                }
+            }
+        }
+        
+        function drawHelicopter() {
+            // rotor blade spin
+            heliRotorAngle += ROTOR_SPEED;
+            ctx.save();
+            ctx.translate(heliX, HELI_Y);
+            // main body
+            ctx.fillStyle = "#2b6f3c";
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 18, 10, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = "#568c5e";
+            ctx.fillRect(-5, -6, 12, 12);
+            ctx.fillStyle = "#c9b036";
+            ctx.fillRect(-3, -10, 6, 5);
+            // rotor
+            ctx.rotate(heliRotorAngle);
+            ctx.fillStyle = "#6a8e9a";
+            ctx.fillRect(-32, -3, 64, 5);
+            ctx.fillRect(-3, -32, 5, 64);
+            ctx.restore();
+            
+            // tail
+            ctx.beginPath();
+            ctx.moveTo(heliX - 20, HELI_Y);
+            ctx.lineTo(heliX - 34, HELI_Y - 3);
+            ctx.lineTo(heliX - 34, HELI_Y + 3);
+            ctx.fillStyle = "#3c784a";
+            ctx.fill();
+            // tail rotor
+            ctx.fillStyle = "#bac9c9";
+            ctx.fillRect(heliX - 37, HELI_Y - 6, 5, 12);
+        }
+        
+        function drawRopeAndPerson() {
+            if (ropeState !== "IDLE" || carryingPerson || ropeTargetY > HELI_Y) {
+                // rope line
+                ctx.beginPath();
+                ctx.moveTo(heliX, HELI_Y + 6);
+                ctx.lineTo(heliX, ropeTargetY);
+                ctx.strokeStyle = "#cdb38c";
+                ctx.lineWidth = 2.5;
+                ctx.stroke();
+                // person at end of rope if carrying
+                if (carryingPerson) {
+                    ctx.fillStyle = "#fedba0";
+                    ctx.beginPath();
+                    ctx.arc(heliX, ropeTargetY - 3, 7, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.fillStyle = "#3a281a";
+                    ctx.fillRect(heliX - 3, ropeTargetY - 8, 6, 6);
+                    ctx.fillStyle = "#fff";
+                    ctx.fillRect(heliX - 2, ropeTargetY - 11, 2, 2);
+                    ctx.fillRect(heliX + 1, ropeTargetY - 11, 2, 2);
+                }
+            }
+        }
+        
+        function drawSafetyZone() {
+            ctx.fillStyle = "#7eaa5c";
+            ctx.fillRect(SAFETY_X - 10, LOGIC_H - 45, 80, 22);
+            ctx.fillStyle = "#c0d8a8";
+            ctx.fillRect(SAFETY_X - 5, LOGIC_H - 48, 70, 8);
+            ctx.fillStyle = "#f3ffcf";
+            ctx.font = "bold 18px monospace";
+            ctx.shadowBlur = 0;
+            ctx.fillText("🏠", SAFETY_X + 8, LOGIC_H - 28);
+            ctx.fillStyle = "#faf0c8";
+            ctx.font = "12px monospace";
+            ctx.fillText("SAFETY", SAFETY_X + 20, LOGIC_H - 32);
+        }
+        
+        function drawRescueCounter() {
+            ctx.fillStyle = "#fff3dd";
+            ctx.font = "bold 26px 'Courier New', monospace";
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = "black";
+            ctx.fillText(`RESCUED: ${rescueCount}`, 20, 58);
+            ctx.font = "bold 14px monospace";
+            ctx.fillStyle = "#aaffdd";
+            ctx.fillText("AUTO RESCUE", 20, 92);
+            ctx.shadowBlur = 0;
+        }
+        
+        // ----- Auto-trigger rescue attempts (state machine) -----
+        function autoRescueLogic() {
+            // if idle and not carrying and not returning and a target exists, start lowering rope
+            if (ropeState === "IDLE" && !carryingPerson && !returningToLeft && currentTargetIdx === -1) {
+                const nxt = findNextRescueTarget();
+                if (nxt !== -1) {
+                    tryStartPickup();
+                }
+            }
+            // if rope returning but not yet dropped, handled inside state
+        }
+        
+        // ----- Main animation loop -----
+        function updateGame() {
+            updateWater();
+            updateRain();
+            updateLightning();
+            updateRopeAndPickup();
+            autoRescueLogic();
+            
+            // small boundary for heliX
+            heliX = Math.min(Math.max(heliX, 35), LOGIC_W - 60);
+        }
+        
+        function drawScene() {
+            if (!ctx) return;
+            drawBackgroundAndFlood();
+            drawBuildings();
+            drawSafetyZone();
+            drawHelicopter();
+            drawRopeAndPerson();
+            drawRain();
+            applyLightningEffect(ctx);
+            drawRescueCounter();
+            
+            // extra rain effect
+            ctx.fillStyle = "white";
+            ctx.globalAlpha = 0.5;
+            for(let i=0;i<30;i++) ctx.fillRect(20+(i*19)%LOGIC_W, (Date.now()*0.01 + i*40)%LOGIC_H, 1, 2);
+            ctx.globalAlpha = 1;
+        }
+        
+        function animate() {
+            updateGame();
+            drawScene();
+            animationId = requestAnimationFrame(animate);
+        }
+        
+        // Handle window resize and device pixel ratio
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            // reinitialize ctx after resize
+            ctx = canvas.getContext('2d');
+            updateWaterSurface();
+        });
+        
+        // also handle orientation changes
+        window.addEventListener('orientationchange', () => {
+            setTimeout(resizeCanvas, 20);
+        });
+        
+        // manual initial calls
+        function init() {
+            initRain();
+            updateWaterSurface();
+            resizeCanvas();
+            // start with first rescue attempt after short delay
+            setTimeout(() => {
+                if (ropeState === "IDLE" && findNextRescueTarget() !== -1) {
+                    tryStartPickup();
+                }
+            }, 500);
+            animate();
+        }
+        
+        init();
+    })();
+</script>
+</body>
+</html>

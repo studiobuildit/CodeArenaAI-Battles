@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Elegant Analog Clock</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { margin: 0; background: black; overflow: hidden; width: 100vw; height: 100vh; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+const W = 400, H = 400;
+const CX = W / 2, CY = H / 2;
+const R = 180;
+
+let vpw = window.innerWidth, vph = window.innerHeight, dpr = 1;
+function syncViewport() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  vpw = Math.max(1, window.innerWidth);
+  vph = Math.max(1, window.innerHeight);
+  canvas.width = Math.floor(vpw * dpr);
+  canvas.height = Math.floor(vph * dpr);
+}
+
+function beginFrame() {
+  syncViewport();
+  ctx.setTransform((vpw / W) * dpr, 0, 0, (vph / H) * dpr, 0, 0);
+}
+
+function drawFace() {
+  ctx.beginPath();
+  ctx.arc(CX, CY, R, 0, Math.PI * 2);
+  ctx.fillStyle = "#050505";
+  ctx.shadowBlur = 30;
+  ctx.shadowColor = "rgba(0,255,200,0.2)";
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.beginPath();
+  ctx.arc(CX, CY, R - 10, 0, Math.PI * 2);
+  ctx.fillStyle = "#0a0a0a";
+  ctx.fill();
+}
+
+function drawMarkers() {
+  for (let i = 0; i < 60; i++) {
+    const angle = (i * Math.PI * 2) / 60;
+    const inner = i % 5 === 0 ? R - 30 : R - 20;
+    const outer = R - 10;
+
+    const x1 = CX + Math.cos(angle) * inner;
+    const y1 = CY + Math.sin(angle) * inner;
+    const x2 = CX + Math.cos(angle) * outer;
+    const y2 = CY + Math.sin(angle) * outer;
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+
+    ctx.strokeStyle = i % 5 === 0 ? "rgba(0,255,200,0.9)" : "rgba(0,255,200,0.3)";
+    ctx.lineWidth = i % 5 === 0 ? 2 : 1;
+
+    ctx.shadowBlur = i % 5 === 0 ? 10 : 0;
+    ctx.shadowColor = "rgba(0,255,200,0.8)";
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+}
+
+function drawHands(now) {
+  const ms = now.getMilliseconds();
+  const sec = now.getSeconds() + ms / 1000;
+  const min = now.getMinutes() + sec / 60;
+  const hr = now.getHours() % 12 + min / 60;
+
+  const secAngle = (sec * Math.PI * 2) / 60;
+  const minAngle = (min * Math.PI * 2) / 60;
+  const hrAngle = (hr * Math.PI * 2) / 12;
+
+  drawHand(hrAngle, 70, 4, "rgba(255,255,255,0.9)");
+  drawHand(minAngle, 110, 3, "rgba(200,255,255,0.9)");
+  drawHand(secAngle, 140, 2, "rgba(0,255,200,1)");
+}
+
+function drawHand(angle, length, width, color) {
+  ctx.beginPath();
+  ctx.moveTo(CX, CY);
+  ctx.lineTo(
+    CX + Math.cos(angle - Math.PI / 2) * length,
+    CY + Math.sin(angle - Math.PI / 2) * length
+  );
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = color;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+function drawCenter() {
+  ctx.beginPath();
+  ctx.arc(CX, CY, 5, 0, Math.PI * 2);
+  ctx.fillStyle = "#00ffc8";
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = "#00ffc8";
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+function animate() {
+  beginFrame();
+  ctx.clearRect(0, 0, W, H);
+
+  drawFace();
+  drawMarkers();
+  drawHands(new Date());
+  drawCenter();
+
+  requestAnimationFrame(animate);
+}
+
+syncViewport();
+window.addEventListener("resize", syncViewport);
+animate();
+</script>
+</body>
+</html>

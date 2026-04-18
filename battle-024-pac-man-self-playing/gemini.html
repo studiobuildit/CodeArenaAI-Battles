@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pac-Man Auto-Play</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const W = 540;
+        const H = 960;
+        const COLS = 19;
+        const ROWS = 22;
+        const TILE = Math.floor(W / COLS);
+        const OFFSET_Y = (H - (ROWS * TILE)) / 2;
+
+        const originalMap = [
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,1,1,1,0,1,0,1,1,1,0,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,1,0,1,1,1,1,1,0,1,0,1,1,0,1],
+            [1,0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,0,1],
+            [1,1,1,1,0,1,1,1,2,1,2,1,1,1,0,1,1,1,1],
+            [2,2,2,1,0,1,2,2,2,2,2,2,2,1,0,1,2,2,2],
+            [1,1,1,1,0,1,2,1,1,2,1,1,2,1,0,1,1,1,1],
+            [2,2,2,2,0,2,2,1,2,2,2,1,2,2,0,2,2,2,2],
+            [1,1,1,1,0,1,2,1,1,1,1,1,2,1,0,1,1,1,1],
+            [2,2,2,1,0,1,2,2,2,2,2,2,2,1,0,1,2,2,2],
+            [1,1,1,1,0,1,2,1,1,1,1,1,2,1,0,1,1,1,1],
+            [1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,1,1,1,0,1,0,1,1,1,0,1,1,0,1],
+            [1,0,0,1,0,0,0,0,0,2,0,0,0,0,0,1,0,0,1],
+            [1,1,0,1,0,1,0,1,1,1,1,1,0,1,0,1,0,1,1],
+            [1,0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,0,1],
+            [1,0,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+        ];
+
+        let map = [];
+        let score = 0;
+        let pacman = { x: 9, y: 15, dir: {x:0, y:0}, nextDir: {x:0, y:0}, anim: 0 };
+        let ghosts = [
+            { x: 9, y: 9, color: '#FF0000', dir: {x:1, y:0} },
+            { x: 8, y: 9, color: '#FFB8FF', dir: {x:-1, y:0} },
+            { x: 10, y: 9, color: '#00FFFF', dir: {x:0, y:-1} },
+            { x: 9, y: 8, color: '#FFB852', dir: {x:0, y:1} }
+        ];
+
+        function reset() {
+            map = originalMap.map(row => [...row]);
+            pacman.x = 9; pacman.y = 15;
+            score = 0;
+        }
+
+        function getDist(x1, y1, x2, y2) {
+            return Math.abs(x1 - x2) + Math.abs(y1 - y2);
+        }
+
+        function isWall(x, y) {
+            if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return true;
+            return map[y][x] === 1;
+        }
+
+        function autoMovePacman() {
+            const dirs = [{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}];
+            let bestDir = dirs[0];
+            let maxScore = -Infinity;
+
+            dirs.forEach(d => {
+                const nx = pacman.x + d.x;
+                const ny = pacman.y + d.y;
+                if (!isWall(nx, ny)) {
+                    let weight = 0;
+                    map.forEach((row, y) => row.forEach((cell, x) => {
+                        if (cell === 0) weight += 100 / (getDist(nx, ny, x, y) + 1);
+                    }));
+                    ghosts.forEach(g => {
+                        const d = getDist(nx, ny, g.x, g.y);
+                        if (d < 3) weight -= 5000 / (d + 0.1);
+                    });
+                    if (weight > maxScore) {
+                        maxScore = weight;
+                        bestDir = d;
+                    }
+                }
+            });
+            pacman.dir = bestDir;
+            pacman.x += pacman.dir.x;
+            pacman.y += pacman.dir.y;
+            
+            if (map[pacman.y][pacman.x] === 0) {
+                map[pacman.y][pacman.x] = 2;
+                score += 10;
+            }
+        }
+
+        function moveGhosts() {
+            const dirs = [{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}];
+            ghosts.forEach(g => {
+                let possible = dirs.filter(d => !isWall(g.x + d.x, g.y + d.y) && (d.x !== -g.dir.x || d.y !== -g.dir.y));
+                if (possible.length === 0) possible = dirs.filter(d => !isWall(g.x + d.x, g.y + d.y));
+                
+                possible.sort((a, b) => getDist(g.x + a.x, g.y + a.y, pacman.x, pacman.y) - getDist(g.x + b.x, g.y + b.y, pacman.x, pacman.y));
+                g.dir = possible[0] || g.dir;
+                g.x += g.dir.x;
+                g.y += g.dir.y;
+
+                if (g.x === pacman.x && g.y === pacman.y) reset();
+            });
+        }
+
+        let frame = 0;
+        function update() {
+            frame++;
+            if (frame % 10 === 0) {
+                autoMovePacman();
+                moveGhosts();
+            }
+            pacman.anim = Math.sin(frame * 0.3) * 0.5 + 0.5;
+            
+            if (!map.some(row => row.includes(0))) reset();
+        }
+
+        function draw() {
+            const dpr = window.devicePixelRatio || 1;
+            ctx.setTransform((window.innerWidth/W)*dpr, 0, 0, (window.innerHeight/H)*dpr, 0, 0);
+
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 30px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`SCORE: ${score}`, W/2, OFFSET_Y - 30);
+
+            for(let y=0; y<ROWS; y++) {
+                for(let x=0; x<COLS; x++) {
+                    const tx = x * TILE;
+                    const ty = y * TILE + OFFSET_Y;
+                    if (map[y][x] === 1) {
+                        ctx.strokeStyle = '#2424ff';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(tx+2, ty+2, TILE-4, TILE-4);
+                    } else if (map[y][x] === 0) {
+                        ctx.fillStyle = '#ffb8ae';
+                        ctx.beginPath();
+                        ctx.arc(tx + TILE/2, ty + TILE/2, 3, 0, Math.PI*2);
+                        ctx.fill();
+                    }
+                }
+            }
+
+            ctx.fillStyle = 'yellow';
+            const px = pacman.x * TILE + TILE/2;
+            const py = pacman.y * TILE + TILE/2 + OFFSET_Y;
+            const rotation = Math.atan2(pacman.dir.y, pacman.dir.x);
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.arc(px, py, TILE/1.5, rotation + 0.2 * pacman.anim, rotation + Math.PI * 2 - 0.2 * pacman.anim);
+            ctx.fill();
+
+            ghosts.forEach(g => {
+                const gx = g.x * TILE + TILE/2;
+                const gy = g.y * TILE + TILE/2 + OFFSET_Y;
+                ctx.fillStyle = g.color;
+                ctx.beginPath();
+                ctx.arc(gx, gy - 2, TILE/1.5, Math.PI, 0);
+                ctx.lineTo(gx + TILE/1.5, gy + TILE/1.5);
+                ctx.lineTo(gx - TILE/1.5, gy + TILE/1.5);
+                ctx.fill();
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(gx - 4, gy - 4, 3, 0, Math.PI*2);
+                ctx.arc(gx + 4, gy - 4, 3, 0, Math.PI*2);
+                ctx.fill();
+            });
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        function resize() {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = window.innerWidth * dpr;
+            canvas.height = window.innerHeight * dpr;
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        reset();
+        loop();
+    </script>
+</body>
+</html>

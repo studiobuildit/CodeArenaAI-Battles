@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Auto Bowling Simulation</title>
+<style>
+html,body{
+  margin:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  background:#000;
+}
+body{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+canvas{
+  display:block;
+  background:#000;
+  touch-action:none;
+}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<script>
+(() => {
+  const W = 540, H = 960;
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+
+  let scale = 1, dpr = 1;
+
+  function resize(){
+    const vw = innerWidth, vh = innerHeight;
+    scale = Math.min(vw/W, vh/H);
+
+    const cw = Math.round(W*scale);
+    const ch = Math.round(H*scale);
+
+    canvas.style.width = cw + "px";
+    canvas.style.height = ch + "px";
+
+    dpr = Math.max(1, Math.min(3, devicePixelRatio || 1));
+    canvas.width = Math.round(cw*dpr);
+    canvas.height = Math.round(ch*dpr);
+
+    ctx.setTransform(dpr*scale,0,0,dpr*scale,0,0);
+    ctx.imageSmoothingEnabled = true;
+  }
+  addEventListener("resize", resize, {passive:true});
+  resize();
+
+  const rand = (a,b)=>a+Math.random()*(b-a);
+  const TAU = Math.PI*2;
+
+  const lane = {x:70, y:60, w:400, h:840};
+
+  let pins = [];
+  let particles = [];
+  let score = 0;
+  let message = "";
+  let msgTimer = 0;
+  let resetTimer = 0;
+
+  const ball = {
+    x: W/2 - 90,
+    y: 820,
+    r: 18,
+    vx: 0,
+    vy: -8,
+    spin: 0.08,
+    active: true,
+    angle:0
+  };
+
+  function setupPins(){
+    pins = [];
+    const startY = 180;
+    const gapX = 34;
+    const gapY = 30;
+
+    for(let r=0;r<4;r++){
+      const n = r+1;
+      const rowY = startY + r*gapY;
+      const rowW = (n-1)*gapX;
+      for(let i=0;i<n;i++){
+        pins.push({
+          x: W/2 - rowW/2 + i*gapX,
+          y: rowY,
+          r: 10,
+          vx:0,
+          vy:0,
+          rot:0,
+          vr:0,
+          down:false
+        });
+      }
+    }
+  }
+
+  function resetBall(){
+    ball.x = W/2 - rand(70,110);
+    ball.y = 820;
+    ball.r = 18;
+    ball.vx = rand(0.5,1.3);
+    ball.vy = -8.2;
+    ball.spin = rand(0.05,0.10);
+    ball.active = true;
+    ball.angle = 0;
+  }
+
+  function fullReset(){
+    setupPins();
+    resetBall();
+    particles = [];
+    message = "";
+    msgTimer = 0;
+    resetTimer = 0;
+  }
+
+  fullReset();
+
+  function spawnBurst(x,y,color,n){
+    for(let i=0;i<n;i++){
+      particles.push({
+        x,y,
+        vx:rand(-4,4),
+        vy:rand(-4,4),
+        life:rand(24,55),
+        size:rand(2,6),
+        color
+      });
+    }
+  }
+
+  function pinCollision(a,b){
+    const dx = b.x-a.x;
+    const dy = b.y-a.y;
+    const dist = Math.hypot(dx,dy);
+    const min = a.r+b.r;
+    if(dist < min && dist > 0){
+      const nx = dx/dist, ny = dy/dist;
+      const overlap = min-dist;
+
+      a.x -= nx*overlap*0.5;
+      a.y -= ny*overlap*0.5;
+      b.x += nx*overlap*0.5;
+      b.y += ny*overlap*0.5;
+
+      const av = a.vx*nx + a.vy*ny;
+      const bv = b.vx*nx + b.vy*ny;
+      const impulse = (bv-av)*0.9;
+
+      a.vx += nx*impulse;
+      a.vy += ny*impulse;
+      b.vx -= nx*impulse;
+      b.vy -= ny*impulse;
+
+      a.vr += rand(-0.1,0.1);
+      b.vr += rand(-0.1,0.1);
+    }
+  }
+
+  function ballPin(pin){
+    const dx = pin.x-ball.x;
+    const dy = pin.y-ball.y;
+    const dist = Math.hypot(dx,dy);
+    const min = pin.r+ball.r;
+
+    if(dist < min && dist > 0){
+      const nx = dx/dist, ny = dy/dist;
+      const power = Math.hypot(ball.vx,ball.vy)*1.3;
+
+      pin.vx += nx*power + ball.vx*0.25;
+      pin.vy += ny*power + ball.vy*0.25;
+      pin.vr += rand(-0.2,0.2);
+      pin.down = true;
+
+      ball.vx -= nx*0.6;
+      ball.vy *= 0.92;
+
+      spawnBurst(pin.x,pin.y,"#fff",8);
+    }
+  }
+
+  function updateBall(){
+    if(!ball.active) return;
+
+    ball.vx += ball.spin;
+    ball.vx *= 0.995;
+    ball.vy *= 0.999;
+
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+    ball.angle += 0.25;
+
+    if(ball.x < lane.x+ball.r){
+      ball.x = lane.x+ball.r;
+      ball.vx *= -0.8;
+    }
+    if(ball.x > lane.x+lane.w-ball.r){
+      ball.x = lane.x+lane.w-ball.r;
+      ball.vx *= -0.8;
+    }
+
+    if(ball.y < 90 || ball.y > H+60){
+      ball.active = false;
+      evaluateFrame();
+    }
+
+    for(const p of pins) ballPin(p);
+  }
+
+  function updatePins(){
+    for(const p of pins){
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vr;
+
+      p.vx *= 0.985;
+      p.vy *= 0.985;
+      p.vr *= 0.97;
+
+      if(Math.hypot(p.vx,p.vy) > 1.2) p.down = true;
+      if(Math.abs(p.rot) > 0.9) p.down = true;
+
+      if(p.x < lane.x+p.r){ p.x = lane.x+p.r; p.vx *= -0.6; }
+      if(p.x > lane.x+lane.w-p.r){ p.x = lane.x+lane.w-p.r; p.vx *= -0.6; }
+
+      if(p.y < lane.y+p.r){ p.y = lane.y+p.r; p.vy *= -0.6; }
+      if(p.y > lane.y+lane.h-p.r){ p.y = lane.y+lane.h-p.r; p.vy *= -0.6; }
+    }
+
+    for(let i=0;i<pins.length;i++){
+      for(let j=i+1;j<pins.length;j++){
+        pinCollision(pins[i], pins[j]);
+      }
+    }
+  }
+
+  function updateParticles(){
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.97;
+      p.vy *= 0.97;
+      p.life--;
+      if(p.life<=0) particles.splice(i,1);
+    }
+  }
+
+  function evaluateFrame(){
+    let down = 0;
+    for(const p of pins) if(p.down) down++;
+
+    score = down;
+
+    if(down === 10){
+      message = "STRIKE!";
+      msgTimer = 110;
+      spawnBurst(W/2,250,"#ffd54a",70);
+      spawnBurst(W/2,250,"#6cf",40);
+    } else {
+      message = down + " PINS";
+      msgTimer = 80;
+    }
+
+    resetTimer = 130;
+  }
+
+  function updateGame(){
+    updateBall();
+    updatePins();
+    updateParticles();
+
+    if(msgTimer>0) msgTimer--;
+    if(resetTimer>0){
+      resetTimer--;
+      if(resetTimer===0) fullReset();
+    }
+  }
+
+  function drawBackground(){
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,"#050505");
+    g.addColorStop(1,"#000");
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  function drawLane(){
+    ctx.fillStyle = "#4e3216";
+    ctx.fillRect(lane.x,lane.y,lane.w,lane.h);
+
+    const wood = ctx.createLinearGradient(lane.x,0,lane.x+lane.w,0);
+    wood.addColorStop(0,"#7c562a");
+    wood.addColorStop(0.5,"#a87943");
+    wood.addColorStop(1,"#7c562a");
+    ctx.fillStyle = wood;
+    ctx.fillRect(lane.x+10,lane.y,lane.w-20,lane.h);
+
+    ctx.strokeStyle = "#e7c78a";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(lane.x+10,lane.y,lane.w-20,lane.h);
+  }
+
+  function drawPins(){
+    for(const p of pins){
+      ctx.save();
+      ctx.translate(p.x,p.y);
+      ctx.rotate(p.rot);
+
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.ellipse(0,0,9,14,0,0,TAU);
+      ctx.fill();
+
+      ctx.fillStyle = "#e33";
+      ctx.fillRect(-7,-3,14,3);
+      ctx.fillRect(-7,1,14,2);
+
+      ctx.restore();
+    }
+  }
+
+  function drawBall(){
+    if(!ball.active) return;
+    ctx.save();
+    ctx.translate(ball.x,ball.y);
+    ctx.rotate(ball.angle);
+    const g = ctx.createRadialGradient(-6,-6,2,0,0,ball.r);
+    g.addColorStop(0,"#66d9ff");
+    g.addColorStop(1,"#1746b8");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0,0,ball.r,0,TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawParticles(){
+    for(const p of particles){
+      ctx.globalAlpha = p.life/55;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x,p.y,p.size,p.size);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawHUD(){
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(12,12,150,52);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 28px Arial";
+    ctx.fillText("SCORE",22,34);
+    ctx.fillStyle = "#6cf";
+    ctx.font = "bold 24px Arial";
+    ctx.fillText(score,118,34);
+    if(msgTimer>0){
+      ctx.save();
+      ctx.translate(W/2,110);
+      ctx.textAlign = "center";
+      ctx.font = "bold 46px Arial";
+      ctx.fillStyle = message==="STRIKE!" ? "#ffd54a" : "#fff";
+      ctx.fillText(message,0,0);
+      ctx.restore();
+      ctx.textAlign = "start";
+    }
+  }
+
+  function render(){
+    drawBackground();
+    drawLane();
+    drawParticles();
+    drawPins();
+    drawBall();
+    drawHUD();
+  }
+
+  function loop(){
+    updateGame();
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  loop();
+})();
+</script>
+</body>
+</html>
